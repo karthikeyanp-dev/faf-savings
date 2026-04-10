@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "D:\WorkSpace\Personal\Development\FaF_Savings\read_excel.py", line 4, in <module>
+    wb = openpyxl.load_workbook('2025 & 2026 FaF savings details.xlsx', data_only=True)
+  File "C:\Users\karth\AppData\Roaming\Python\Python313\site-packages\openpyxl\reader\excel.py", line 346, in load_workbook
+    reader = ExcelReader(filename, read_only, keep_vba,
+                         data_only, keep_links, rich_text)
+  File "C:\Users\karth\AppData\Roaming\Python\Python313\site-packages\openpyxl\reader\excel.py", line 123, in __init__
+    self.archive = _validate_archive(fn)
+                   ~~~~~~~~~~~~~~~~~^^^^
+  File "C:\Users\karth\AppData\Roaming\Python\Python313\site-packages\openpyxl\reader\excel.py", line 95, in _validate_archive
+    archive = ZipFile(filename, 'r')
+  File "C:\Python313\Lib\zipfile\__init__.py", line 1367, in __init__
+    self.fp = io.open(file, filemode)
+              ~~~~~~~^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '2025 & 2026 FaF savings details.xlsx'

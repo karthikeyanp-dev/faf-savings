@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isMaintainer() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'maintainer';
+    }
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+    
+    match /members/{memberId} {
+      allow read: if isAuthenticated();
+      allow write: if isMaintainer();
+    }
+    
+    match /transactions/{txId} {
+      allow read: if isAuthenticated();
+      
+      // Allow create only for maintainer with balance validation
+      allow create: if isMaintainer() && 
+                       request.resource.data.amount > 0 &&
+                       request.resource.data.status == 'active' &&
+                       // Verify new balance won't go negative
+                       get(/databases/$(database)/documents/stats/current).data.poolBalance + 
+                       (request.resource.data.type in ['deposit', 'return', 'opening_balance'] 
+                        ? request.resource.data.amount 
+                        : -request.resource.data.amount) >= 0;
+      
+      // Allow update only for maintainer (for voiding)
+      allow update: if isMaintainer() && 
+                       (request.resource.data.keys().hasOnly(['status', 'voidReason', 'updatedAt']) ||
+                        // For edits, re-validate balance
+                        get(/databases/$(database)/documents/stats/current).data.poolBalance >= 0);
+      
+      allow delete: if false;
+    }
+    
+    match /stats/{doc} {
+      allow read: if isAuthenticated();
+      // Only allow updates from client (via transactions)
+      allow update: if isMaintainer();
+      allow write: if false;
+    }
+    
+    match /config/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if isMaintainer();
+    }
+    
+    match /maintainerHistory/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isMaintainer();
+    }
+  }
+}
