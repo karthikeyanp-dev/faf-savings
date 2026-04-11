@@ -7,132 +7,109 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatINR, calculateMemberNet } from '@/utils/financialYear';
+import { formatINR, getCurrentFY, calculateMemberNet, calculateFYTarget } from '@/utils/financialYear';
 import type { MemberDoc, TransactionDoc } from '@/types';
-import { ChevronDown, Search, Filter, X, ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Search, Filter, X, ChevronRight } from 'lucide-react';
 import { StaggerContainer, StaggerItem, TapScale } from '@/components/animations/PageTransition';
 import { Input } from '@/components/ui/input';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 
-// Mobile Member Card
+// Mobile Member Card - tappable to navigate to member detail
 function MemberCard({
   member,
   net,
-  totalDeposit,
-  totalReturn,
-  totalWithdrawal,
   receivable,
-  isExpanded,
-  onToggle,
+  fyDeposited,
+  fyTarget,
+  onClick,
 }: {
   member: MemberDoc;
   net: number;
-  totalDeposit: number;
-  totalReturn: number;
-  totalWithdrawal: number;
   receivable: number;
-  isExpanded: boolean;
-  onToggle: () => void;
+  fyDeposited: number;
+  fyTarget: number;
+  onClick: () => void;
 }) {
+  const progressPct = fyTarget > 0 ? Math.min(100, Math.round((fyDeposited / fyTarget) * 100)) : 0;
+
   return (
-    <Card className="overflow-hidden">
-      <TapScale scale={0.99}>
-        <div
-          className="p-4 cursor-pointer"
-          onClick={onToggle}
-        >
+    <TapScale scale={0.98} onClick={onClick}>
+      <Card className="cursor-pointer">
+        <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={cn(
-                'w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold',
+                'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold',
                 member.active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
               )}>
                 {member.name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <p className="font-semibold text-lg">{member.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <Badge variant={member.active ? 'default' : 'secondary'} className="text-[10px]">
-                    {member.active ? 'Active' : 'Inactive'}
-                  </Badge>
-                  <span className={cn(
-                    'text-sm font-medium',
-                    net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                  )}>
-                    {net >= 0 ? '+' : ''}{formatINR(net)}
-                  </span>
-                </div>
+                <p className="font-semibold">{member.name}</p>
+                <Badge variant={member.active ? 'default' : 'secondary'} className="text-[10px]">
+                  {member.active ? 'Active' : 'Inactive'}
+                </Badge>
               </div>
             </div>
-            <motion.div
-              animate={{ rotate: isExpanded ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-            </motion.div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
           </div>
-        </div>
-      </TapScale>
 
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div className="px-4 pb-4 border-t border-border">
-              <div className="grid grid-cols-2 gap-3 pt-4">
-                <div className="bg-green-50 dark:bg-green-950/30 p-3 rounded-xl">
-                  <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-1">
-                    <ArrowUpRight className="h-4 w-4" />
-                    <span className="text-xs font-medium">Deposited</span>
-                  </div>
-                  <p className="text-lg font-bold">{formatINR(totalDeposit)}</p>
-                </div>
-                <div className="bg-blue-50 dark:bg-blue-950/30 p-3 rounded-xl">
-                  <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-1">
-                    <Wallet className="h-4 w-4" />
-                    <span className="text-xs font-medium">Returned</span>
-                  </div>
-                  <p className="text-lg font-bold">{formatINR(totalReturn)}</p>
-                </div>
-                <div className="bg-orange-50 dark:bg-orange-950/30 p-3 rounded-xl">
-                  <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400 mb-1">
-                    <ArrowDownRight className="h-4 w-4" />
-                    <span className="text-xs font-medium">Withdrawn</span>
-                  </div>
-                  <p className="text-lg font-bold">{formatINR(totalWithdrawal)}</p>
-                </div>
-                <div className={cn(
-                  'p-3 rounded-xl',
-                  receivable > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-muted'
-                )}>
-                  <div className={cn(
-                    'flex items-center gap-2 mb-1',
-                    receivable > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'
-                  )}>
-                    <span className="text-xs font-medium">Receivable</span>
-                  </div>
-                  <p className="text-lg font-bold">{formatINR(receivable)}</p>
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-4 pt-4 border-t border-border">
+            <div>
+              <p className={cn(
+                'text-lg font-bold',
+                net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+              )}>
+                {formatINR(net)}
+              </p>
+              <p className="text-xs text-muted-foreground">Balance</p>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Card>
+            <div>
+              <p className="text-lg font-bold">{formatINR(receivable)}</p>
+              <p className="text-xs text-muted-foreground">Outstanding</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold">{formatINR(fyDeposited)}</p>
+              <p className="text-xs text-muted-foreground">FY Deposited</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold">{formatINR(fyTarget)}</p>
+              <p className="text-xs text-muted-foreground">FY Target</p>
+            </div>
+          </div>
+
+          {/* Full-width FY Progress */}
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-muted-foreground">FY Progress</p>
+              <p className="text-xs font-medium">{formatINR(fyDeposited)} / {formatINR(fyTarget)}</p>
+            </div>
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all duration-500',
+                  progressPct >= 100 ? 'bg-emerald-500' : progressPct >= 50 ? 'bg-blue-500' : 'bg-amber-500'
+                )}
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </TapScale>
   );
 }
 
 export function MembersPage() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [expandedMember, setExpandedMember] = useState<string | null>(null);
+
+  const currentFY = getCurrentFY();
+  const fyTarget = calculateFYTarget(currentFY);
 
   const { data: members = [] } = useQuery({
     queryKey: ['members'],
@@ -151,6 +128,7 @@ export function MembersPage() {
   });
 
   const activeTransactions = transactions.filter((t) => t.status === 'active');
+  const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
 
   // Filter members
   const filteredMembers = members
@@ -238,27 +216,24 @@ export function MembersPage() {
         {/* Mobile: Card List */}
         <StaggerContainer className="lg:hidden space-y-3">
           {filteredMembers.map((member) => {
-            const memberTxs = activeTransactions.filter((t) => t.memberId === member.id);
             const net = calculateMemberNet(
-              memberTxs.map((t) => ({ ...t, memberId: t.memberId })),
+              activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
               member.id
             );
-            const totalDeposit = memberTxs.filter((t) => t.type === 'deposit').reduce((s, t) => s + t.amount, 0);
-            const totalReturn = memberTxs.filter((t) => t.type === 'return').reduce((s, t) => s + t.amount, 0);
-            const totalWithdrawal = memberTxs.filter((t) => t.type === 'withdrawal').reduce((s, t) => s + t.amount, 0);
             const receivable = Math.max(0, -net);
+            const memberFyDeposited = fyTransactions
+              .filter((t) => t.memberId === member.id && t.type === 'deposit')
+              .reduce((sum, t) => sum + t.amount, 0);
 
             return (
               <StaggerItem key={member.id}>
                 <MemberCard
                   member={member}
                   net={net}
-                  totalDeposit={totalDeposit}
-                  totalReturn={totalReturn}
-                  totalWithdrawal={totalWithdrawal}
                   receivable={receivable}
-                  isExpanded={expandedMember === member.id}
-                  onToggle={() => setExpandedMember(expandedMember === member.id ? null : member.id)}
+                  fyDeposited={memberFyDeposited}
+                  fyTarget={fyTarget}
+                  onClick={() => navigate(`/members/${member.id}`)}
                 />
               </StaggerItem>
             );
@@ -271,40 +246,59 @@ export function MembersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="text-right">Net Balance</TableHead>
-                  <TableHead className="text-right">Deposited</TableHead>
-                  <TableHead className="text-right">Returned</TableHead>
-                  <TableHead className="text-right">Withdrawn</TableHead>
-                  <TableHead className="text-right">Receivable</TableHead>
+                  <TableHead>Member</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead className="text-right">Outstanding</TableHead>
+                  <TableHead className="text-right">FY Deposited</TableHead>
+                  <TableHead className="text-right">FY Target</TableHead>
+                  <TableHead className="text-right">Progress</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredMembers.map((member) => {
-                  const memberTxs = activeTransactions.filter((t) => t.memberId === member.id);
                   const net = calculateMemberNet(
-                    memberTxs.map((t) => ({ ...t, memberId: t.memberId })),
+                    activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
                     member.id
                   );
-                  const totalDeposit = memberTxs.filter((t) => t.type === 'deposit').reduce((s, t) => s + t.amount, 0);
-                  const totalReturn = memberTxs.filter((t) => t.type === 'return').reduce((s, t) => s + t.amount, 0);
-                  const totalWithdrawal = memberTxs.filter((t) => t.type === 'withdrawal').reduce((s, t) => s + t.amount, 0);
                   const receivable = Math.max(0, -net);
+                  const memberFyDeposited = fyTransactions
+                    .filter((t) => t.memberId === member.id && t.type === 'deposit')
+                    .reduce((sum, t) => sum + t.amount, 0);
+                  const progressPct = fyTarget > 0 ? Math.min(100, Math.round((memberFyDeposited / fyTarget) * 100)) : 0;
 
                   return (
-                    <TableRow key={member.id}>
+                    <TableRow 
+                      key={member.id} 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/members/${member.id}`)}
+                    >
                       <TableCell className="font-medium">{member.name}</TableCell>
-                      <TableCell className={cn(
-                        'text-right',
-                        net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                      )}>
+                      <TableCell
+                        className={cn(
+                          'text-right font-semibold',
+                          net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                        )}
+                      >
                         {formatINR(net)}
                       </TableCell>
-                      <TableCell className="text-right">{formatINR(totalDeposit)}</TableCell>
-                      <TableCell className="text-right">{formatINR(totalReturn)}</TableCell>
-                      <TableCell className="text-right">{formatINR(totalWithdrawal)}</TableCell>
                       <TableCell className="text-right">{formatINR(receivable)}</TableCell>
+                      <TableCell className="text-right">{formatINR(memberFyDeposited)}</TableCell>
+                      <TableCell className="text-right">{formatINR(fyTarget)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center gap-2 justify-end">
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={cn(
+                                'h-full rounded-full',
+                                progressPct >= 100 ? 'bg-emerald-500' : progressPct >= 50 ? 'bg-blue-500' : 'bg-amber-500'
+                              )}
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground w-8">{progressPct}%</span>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={member.active ? 'default' : 'secondary'}>
                           {member.active ? 'Active' : 'Inactive'}
