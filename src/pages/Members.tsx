@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/button';
 import { formatINR, getCurrentFY, calculateMemberNet, calculateFYTarget } from '@/utils/financialYear';
 import type { MemberDoc, TransactionDoc } from '@/types';
 import { Search, Filter, X, ChevronRight } from 'lucide-react';
-import { StaggerContainer, StaggerItem, TapScale } from '@/components/animations/PageTransition';
+import { StaggerContainer, StaggerItem } from '@/components/animations/PageTransition';
 import { Input } from '@/components/ui/input';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 
 // Mobile Member Card - tappable to navigate to member detail
 function MemberCard({
@@ -35,8 +36,14 @@ function MemberCard({
   const progressPct = fyTarget > 0 ? Math.min(100, Math.round((fyDeposited / fyTarget) * 100)) : 0;
 
   return (
-    <TapScale scale={0.98} onClick={onClick} className="w-full">
-      <Card className="cursor-pointer">
+    <motion.div
+      whileTap={{ scale: 0.98 }}
+      whileHover={{ scale: 1.01 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      className="w-full cursor-pointer"
+      onClick={onClick}
+    >
+      <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -98,7 +105,7 @@ function MemberCard({
           </div>
         </CardContent>
       </Card>
-    </TapScale>
+    </motion.div>
   );
 }
 
