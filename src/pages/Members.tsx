@@ -35,7 +35,7 @@ function MemberCard({
   const progressPct = fyTarget > 0 ? Math.min(100, Math.round((fyDeposited / fyTarget) * 100)) : 0;
 
   return (
-    <TapScale scale={0.98} onClick={onClick}>
+    <TapScale scale={0.98} onClick={onClick} className="w-full">
       <Card className="cursor-pointer">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">

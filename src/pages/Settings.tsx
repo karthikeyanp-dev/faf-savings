@@ -356,9 +356,9 @@ export function SettingsPage() {
                       <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                         <CreditCard className="h-4 w-4 text-primary" />
                       </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="flex-1 min-w-0">
                         <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">UPI ID</p>
-                        <p className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate mt-0.5">
+                        <p className="font-semibold text-sm text-foreground truncate mt-0.5">
                           {config?.upiId ? config.upiId : <span className="text-muted-foreground font-normal">Not set</span>}
                         </p>
                       </div>
@@ -381,14 +381,14 @@ export function SettingsPage() {
                       <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
                         <Building2 className="h-4 w-4 text-primary" />
                       </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="flex-1 min-w-0">
                         <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Bank Details</p>
-                        <p className="text-sm leading-relaxed whitespace-pre-line text-slate-900 dark:text-slate-100 mt-0.5">
+                        <p className="text-sm leading-relaxed whitespace-pre-line text-foreground mt-0.5">
                           {config?.bankDetails ? config.bankDetails : <span className="text-muted-foreground font-normal">Not set</span>}
                         </p>
                       </div>
                       {config?.bankDetails && (
-                        <TapScale scale={0.9}>
+                        <TapScale scale={0.9} className="self-start mt-0.5">
                           <Button
                             variant="ghost"
                             size="icon"

@@ -133,7 +133,7 @@ export function TapScale({
       whileTap={{ scale }}
       whileHover={{ scale: 1.01 }}
       transition={{ type: "spring", stiffness: 400, damping: 20 }}
-      className={`w-full ${className}`}
+      className={`inline-flex shrink-0 ${className}`}
       onClick={onClick}
     >
       {children}
