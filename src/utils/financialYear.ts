@@ -71,3 +71,38 @@ export function formatDate(timestamp: Timestamp | Date): string {
 export function getCurrentFY(): string {
   return getFY(new Date());
 }
+
+/**
+ * Calculate the FY target for a member based on 500/month accumulation.
+ * FY starts in April. Each month from April to the current month adds 500.
+ */
+export function calculateFYTarget(fy?: string): number {
+  const now = new Date();
+  const currentFY = fy || getCurrentFY();
+  const [startYear] = currentFY.split('-').map(Number);
+
+  // FY starts April 1st of startYear
+  const fyStart = new Date(startYear, 3, 1); // month 3 = April (0-indexed)
+
+  // If we're not yet in this FY, target is 0
+  if (now < fyStart) return 0;
+
+  // Calculate how many months have passed since FY start (inclusive of start month)
+  const currentMonth = now.getMonth(); // 0-indexed
+  const currentYear = now.getFullYear();
+
+  let monthsElapsed: number;
+  if (currentYear === startYear) {
+    // Same year as FY start - April is month 3
+    monthsElapsed = currentMonth - 3 + 1; // +1 because April itself counts
+  } else if (currentYear === startYear + 1) {
+    // Next year (Jan-Mar of the FY)
+    monthsElapsed = (11 - 3 + 1) + (currentMonth + 1); // Apr-Dec + Jan-currentMonth
+  } else {
+    // Beyond this FY
+    monthsElapsed = 12;
+  }
+
+  monthsElapsed = Math.max(0, Math.min(12, monthsElapsed));
+  return monthsElapsed * 500;
+}

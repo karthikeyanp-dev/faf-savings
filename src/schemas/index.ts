@@ -15,6 +15,7 @@ export const voidSchema = z.object({
 
 export const memberSchema = z.object({
   name: z.string().min(1, 'Name is required'),
+  email: z.string().email('Invalid email format').optional().or(z.literal('')),
 });
 
 export const paymentDetailsSchema = z.object({

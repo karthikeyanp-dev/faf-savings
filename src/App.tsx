@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { LoginPage } from '@/pages/Login';
 import { DashboardPage } from '@/pages/Dashboard';
 import { MembersPage } from '@/pages/Members';
+import { MemberDetailPage } from '@/pages/MemberDetail';
 import { ActivityPage } from '@/pages/Activity';
 import { SettingsPage } from '@/pages/Settings';
 import { PageTransition } from '@/components/animations/PageTransition';
@@ -32,6 +33,11 @@ function AnimatedRoutes() {
           <Route path="/members" element={
             <PageTransition>
               <MembersPage />
+            </PageTransition>
+          } />
+          <Route path="/members/:id" element={
+            <PageTransition>
+              <MemberDetailPage />
             </PageTransition>
           } />
           <Route path="/activity" element={

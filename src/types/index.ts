@@ -17,6 +17,7 @@ export interface UserDoc {
 export interface MemberDoc {
   id: string;
   name: string;
+  email?: string;
   active: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

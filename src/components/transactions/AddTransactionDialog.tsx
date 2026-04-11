@@ -67,7 +67,7 @@ function TransactionFormContent({
         <Label className="text-sm font-medium">Member</Label>
         <Select value={watch('memberId')} onValueChange={(v) => setValue('memberId', v)}>
           <SelectItem value="">Select member...</SelectItem>
-          {members.map((m) => (
+          {members.filter((m) => m.active).map((m) => (
             <SelectItem key={m.id} value={m.id}>
               {m.name}
             </SelectItem>
