@@ -1,6 +1,6 @@
 export interface CreateTransactionInput {
-  type: 'deposit' | 'withdrawal' | 'return' | 'opening_balance';
-  memberId: string;
+  type: 'deposit' | 'withdrawal' | 'return' | 'opening_balance' | 'interest';
+  memberId?: string;
   amount: number;
   date: string;
   savingsMonth?: string;

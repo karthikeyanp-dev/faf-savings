@@ -1,22 +1,48 @@
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { collection, getDocs, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { useAuth } from '@/providers/AuthProvider';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectItem } from '@/components/ui/select';
-import type { MemberDoc, UserDoc, AppConfig } from '@/types';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/providers/AuthProvider";
+import { AppLayout } from "@/components/layout/AppLayout";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectItem } from "@/components/ui/select";
+import { formatINR, getCurrentFY } from "@/utils/financialYear";
+import type { MemberDoc, TransactionDoc, UserDoc, AppConfig } from "@/types";
+import { toast } from "sonner";
 
-import { StaggerContainer, StaggerItem, TapScale } from '@/components/animations/PageTransition';
-import { EditMemberDialog } from '@/components/transactions/EditMemberDialog';
-import { AddMemberDialog } from '@/components/transactions/AddMemberDialog';
+import {
+  StaggerContainer,
+  StaggerItem,
+  TapScale,
+} from "@/components/animations/PageTransition";
+import { EditMemberDialog } from "@/components/transactions/EditMemberDialog";
+import { AddMemberDialog } from "@/components/transactions/AddMemberDialog";
+import { SetOpeningBalanceDialog } from "@/components/transactions/SetOpeningBalanceDialog";
 import {
   CreditCard,
   Users,
@@ -30,9 +56,10 @@ import {
   Upload,
   Copy,
   Building2,
-  Download
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+  Download,
+  Wallet,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Settings Section Card — defined outside SettingsPage to avoid re-mount on state change
 function SettingsSection({
@@ -83,11 +110,19 @@ function MemberCard({
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={cn(
-              'w-10 h-10 rounded-full flex items-center justify-center',
-              member.active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-            )}>
-              {member.active ? <Power className="h-5 w-5" /> : <PowerOff className="h-5 w-5" />}
+            <div
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center",
+                member.active
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {member.active ? (
+                <Power className="h-5 w-5" />
+              ) : (
+                <PowerOff className="h-5 w-5" />
+              )}
             </div>
             <div>
               <p className="font-semibold">{member.name}</p>
@@ -97,8 +132,11 @@ function MemberCard({
                   {member.email}
                 </p>
               )}
-              <Badge variant={member.active ? 'default' : 'secondary'} className="text-[10px] mt-0.5">
-                {member.active ? 'Active' : 'Inactive'}
+              <Badge
+                variant={member.active ? "default" : "secondary"}
+                className="text-[10px] mt-0.5"
+              >
+                {member.active ? "Active" : "Inactive"}
               </Badge>
             </div>
           </div>
@@ -120,13 +158,17 @@ function MemberCard({
                   size="icon"
                   onClick={onToggle}
                   className={cn(
-                    'h-8 w-8',
+                    "h-8 w-8",
                     member.active
-                      ? 'text-orange-500 hover:text-orange-600 hover:bg-orange-50'
-                      : 'text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50'
+                      ? "text-orange-500 hover:text-orange-600 hover:bg-orange-50"
+                      : "text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50",
                   )}
                 >
-                  {member.active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                  {member.active ? (
+                    <PowerOff className="h-4 w-4" />
+                  ) : (
+                    <Power className="h-4 w-4" />
+                  )}
                 </Button>
               </TapScale>
             </div>
@@ -142,48 +184,78 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberDoc | null>(null);
+  const [isOpeningBalanceOpen, setIsOpeningBalanceOpen] = useState(false);
+  const currentFY = getCurrentFY();
 
   const { data: config } = useQuery({
-    queryKey: ['config'],
+    queryKey: ["config"],
     queryFn: async () => {
-      const snap = await getDoc(doc(db, 'config', 'app'));
+      const snap = await getDoc(doc(db, "config", "app"));
       return snap.data() as AppConfig;
     },
   });
 
   const { data: members = [] } = useQuery({
-    queryKey: ['members'],
+    queryKey: ["members"],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'members'));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MemberDoc));
+      const snap = await getDocs(collection(db, "members"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MemberDoc);
     },
   });
 
   const { data: users = [] } = useQuery({
-    queryKey: ['users'],
+    queryKey: ["users"],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'users'));
-      return snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserDoc));
+      const snap = await getDocs(collection(db, "users"));
+      return snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as UserDoc);
     },
   });
 
-  const handleUpdatePaymentDetails = async (e: React.FormEvent<HTMLFormElement>) => {
+  const { data: transactions = [] } = useQuery({
+    queryKey: ["transactions"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "transactions"));
+      return snap.docs.map(
+        (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
+      );
+    },
+  });
+
+  const openingBalances = members.map((m) => {
+    const amount = transactions
+      .filter(
+        (t) =>
+          t.status === "active" &&
+          t.memberId === m.id &&
+          t.type === "opening_balance",
+      )
+      .reduce((sum, t) => sum + t.amount, 0);
+    return { member: m, amount };
+  });
+  const totalOpeningBalance = openingBalances.reduce(
+    (sum, ob) => sum + ob.amount,
+    0,
+  );
+
+  const handleUpdatePaymentDetails = async (
+    e: React.FormEvent<HTMLFormElement>,
+  ) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const upiId = formData.get('upiId') as string;
-    const bankDetails = formData.get('bankDetails') as string;
+    const upiId = formData.get("upiId") as string;
+    const bankDetails = formData.get("bankDetails") as string;
 
     try {
-      await updateDoc(doc(db, 'config', 'app'), {
+      await updateDoc(doc(db, "config", "app"), {
         upiId: upiId || null,
         bankDetails: bankDetails || null,
         updatedAt: serverTimestamp(),
         updatedByUid: user!.uid,
       });
-      toast.success('Payment details updated');
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      toast.success("Payment details updated");
+      queryClient.invalidateQueries({ queryKey: ["config"] });
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update');
+      toast.error(error.message || "Failed to update");
     }
   };
 
@@ -192,7 +264,7 @@ export function SettingsPage() {
     if (!file) return;
 
     if (file.size > 1024 * 1024) {
-      toast.error('Image too large. Please use an image under 1MB.');
+      toast.error("Image too large. Please use an image under 1MB.");
       return;
     }
 
@@ -201,50 +273,56 @@ export function SettingsPage() {
       reader.onload = async (event) => {
         const base64 = event.target?.result as string;
 
-        await updateDoc(doc(db, 'config', 'app'), {
+        await updateDoc(doc(db, "config", "app"), {
           qrUrl: base64,
           updatedAt: serverTimestamp(),
           updatedByUid: user!.uid,
         });
 
-        toast.success('QR code uploaded');
-        queryClient.invalidateQueries({ queryKey: ['config'] });
+        toast.success("QR code uploaded");
+        queryClient.invalidateQueries({ queryKey: ["config"] });
       };
       reader.readAsDataURL(file);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to upload QR');
+      toast.error(error.message || "Failed to upload QR");
     }
   };
 
   const handleToggleMember = async (member: MemberDoc) => {
     try {
-      await updateDoc(doc(db, 'members', member.id), {
+      await updateDoc(doc(db, "members", member.id), {
         active: !member.active,
         updatedAt: serverTimestamp(),
       });
-      toast.success(`Member ${member.active ? 'deactivated' : 'activated'}`);
-      queryClient.invalidateQueries({ queryKey: ['members'] });
+      toast.success(`Member ${member.active ? "deactivated" : "activated"}`);
+      queryClient.invalidateQueries({ queryKey: ["members"] });
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update member');
+      toast.error(error.message || "Failed to update member");
     }
   };
 
   const handleMaintainerHandover = async (newMaintainerUid: string) => {
     try {
-      await updateDoc(doc(db, 'config', 'app'), {
+      await updateDoc(doc(db, "config", "app"), {
         currentMaintainerUid: newMaintainerUid,
         updatedAt: serverTimestamp(),
         updatedByUid: user!.uid,
       });
 
-      await updateDoc(doc(db, 'users', user!.uid), { role: 'viewer', updatedAt: serverTimestamp() });
-      await updateDoc(doc(db, 'users', newMaintainerUid), { role: 'maintainer', updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, "users", user!.uid), {
+        role: "viewer",
+        updatedAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, "users", newMaintainerUid), {
+        role: "maintainer",
+        updatedAt: serverTimestamp(),
+      });
 
-      toast.success('Maintainer handover complete');
-      queryClient.invalidateQueries({ queryKey: ['config'] });
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success("Maintainer handover complete");
+      queryClient.invalidateQueries({ queryKey: ["config"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
     } catch (error: any) {
-      toast.error(error.message || 'Failed to handover');
+      toast.error(error.message || "Failed to handover");
     }
   };
 
@@ -260,12 +338,15 @@ export function SettingsPage() {
                 description="UPI and bank details for contributions"
                 icon={CreditCard}
               >
-                <form onSubmit={handleUpdatePaymentDetails} className="space-y-4">
+                <form
+                  onSubmit={handleUpdatePaymentDetails}
+                  className="space-y-4"
+                >
                   <div>
                     <Label className="text-sm font-medium">UPI ID</Label>
                     <Input
                       name="upiId"
-                      defaultValue={config?.upiId || ''}
+                      defaultValue={config?.upiId || ""}
                       placeholder="example@upi"
                       className="mt-1.5"
                     />
@@ -274,7 +355,7 @@ export function SettingsPage() {
                     <Label className="text-sm font-medium">Bank Details</Label>
                     <Input
                       name="bankDetails"
-                      defaultValue={config?.bankDetails || ''}
+                      defaultValue={config?.bankDetails || ""}
                       placeholder="Bank name, account number, IFSC"
                       className="mt-1.5"
                     />
@@ -309,13 +390,19 @@ export function SettingsPage() {
                       className="flex items-center justify-center gap-2 w-full p-4 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
                     >
                       <Upload className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Tap to upload QR code (max 1MB)</span>
+                      <span className="text-sm text-muted-foreground">
+                        Tap to upload QR code (max 1MB)
+                      </span>
                     </label>
                   </div>
                   {config?.qrUrl && (
                     <div className="flex justify-center">
                       <div className="p-4 bg-white rounded-xl shadow-sm">
-                        <img src={config.qrUrl} alt="QR Code" className="w-40 h-40 object-contain" />
+                        <img
+                          src={config.qrUrl}
+                          alt="QR Code"
+                          className="w-40 h-40 object-contain"
+                        />
                       </div>
                     </div>
                   )}
@@ -338,7 +425,11 @@ export function SettingsPage() {
                     {config?.qrUrl && (
                       <div className="flex flex-col items-center gap-3 pb-5 border-b border-border/50">
                         <div className="p-4 bg-white rounded-2xl shadow-sm border border-border/30">
-                          <img src={config.qrUrl} alt="Payment QR" className="w-44 h-44 object-contain" />
+                          <img
+                            src={config.qrUrl}
+                            alt="Payment QR"
+                            className="w-44 h-44 object-contain"
+                          />
                         </div>
                         <a
                           href={config.qrUrl}
@@ -357,9 +448,17 @@ export function SettingsPage() {
                         <CreditCard className="h-4 w-4 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">UPI ID</p>
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                          UPI ID
+                        </p>
                         <p className="font-semibold text-sm text-foreground truncate mt-0.5">
-                          {config?.upiId ? config.upiId : <span className="text-muted-foreground font-normal">Not set</span>}
+                          {config?.upiId ? (
+                            config.upiId
+                          ) : (
+                            <span className="text-muted-foreground font-normal">
+                              Not set
+                            </span>
+                          )}
                         </p>
                       </div>
                       {config?.upiId && (
@@ -368,7 +467,10 @@ export function SettingsPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => { navigator.clipboard.writeText(config.upiId!); toast.success('UPI ID copied'); }}
+                            onClick={() => {
+                              navigator.clipboard.writeText(config.upiId!);
+                              toast.success("UPI ID copied");
+                            }}
                           >
                             <Copy className="h-3.5 w-3.5" />
                           </Button>
@@ -382,9 +484,17 @@ export function SettingsPage() {
                         <Building2 className="h-4 w-4 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Bank Details</p>
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                          Bank Details
+                        </p>
                         <p className="text-sm leading-relaxed whitespace-pre-line text-foreground mt-0.5">
-                          {config?.bankDetails ? config.bankDetails : <span className="text-muted-foreground font-normal">Not set</span>}
+                          {config?.bankDetails ? (
+                            config.bankDetails
+                          ) : (
+                            <span className="text-muted-foreground font-normal">
+                              Not set
+                            </span>
+                          )}
                         </p>
                       </div>
                       {config?.bankDetails && (
@@ -393,7 +503,12 @@ export function SettingsPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => { navigator.clipboard.writeText(config.bankDetails!); toast.success('Bank details copied'); }}
+                            onClick={() => {
+                              navigator.clipboard.writeText(
+                                config.bankDetails!,
+                              );
+                              toast.success("Bank details copied");
+                            }}
                           >
                             <Copy className="h-3.5 w-3.5" />
                           </Button>
@@ -423,7 +538,10 @@ export function SettingsPage() {
                   {/* Add Member Button */}
                   <div className="flex justify-end">
                     <TapScale scale={0.95}>
-                      <Button size="icon" onClick={() => setIsAddingMember(true)}>
+                      <Button
+                        size="icon"
+                        onClick={() => setIsAddingMember(true)}
+                      >
                         <Plus className="h-4 w-4" />
                       </Button>
                     </TapScale>
@@ -437,8 +555,14 @@ export function SettingsPage() {
                         member={member}
                         onEdit={() => setEditingMember(member)}
                         onToggle={() => {
-                          const action = member.active ? 'deactivate' : 'activate';
-                          if (window.confirm(`Are you sure you want to ${action} ${member.name}?`)) {
+                          const action = member.active
+                            ? "deactivate"
+                            : "activate";
+                          if (
+                            window.confirm(
+                              `Are you sure you want to ${action} ${member.name}?`,
+                            )
+                          ) {
                             handleToggleMember(member);
                           }
                         }}
@@ -461,13 +585,19 @@ export function SettingsPage() {
                       <TableBody>
                         {members.map((member) => (
                           <TableRow key={member.id}>
-                            <TableCell className="font-medium">{member.name}</TableCell>
+                            <TableCell className="font-medium">
+                              {member.name}
+                            </TableCell>
                             <TableCell className="text-muted-foreground">
-                              {member.email || '—'}
+                              {member.email || "—"}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={member.active ? 'default' : 'secondary'}>
-                                {member.active ? 'Active' : 'Inactive'}
+                              <Badge
+                                variant={
+                                  member.active ? "default" : "secondary"
+                                }
+                              >
+                                {member.active ? "Active" : "Inactive"}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -484,13 +614,19 @@ export function SettingsPage() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    const action = member.active ? 'deactivate' : 'activate';
-                                    if (window.confirm(`Are you sure you want to ${action} ${member.name}?`)) {
+                                    const action = member.active
+                                      ? "deactivate"
+                                      : "activate";
+                                    if (
+                                      window.confirm(
+                                        `Are you sure you want to ${action} ${member.name}?`,
+                                      )
+                                    ) {
                                       handleToggleMember(member);
                                     }
                                   }}
                                 >
-                                  {member.active ? 'Deactivate' : 'Activate'}
+                                  {member.active ? "Deactivate" : "Activate"}
                                 </Button>
                               </div>
                             </TableCell>
@@ -499,6 +635,79 @@ export function SettingsPage() {
                       </TableBody>
                     </Table>
                   </div>
+                </div>
+              </SettingsSection>
+            </StaggerItem>
+          )}
+
+          {/* Opening Balances */}
+          {isMaintainer && (
+            <StaggerItem>
+              <SettingsSection
+                title="Opening Balances"
+                description={`Accumulated balances from before FY ${currentFY}`}
+                icon={Wallet}
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium">
+                        Total Opening Balance
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {openingBalances.filter((ob) => ob.amount !== 0).length}{" "}
+                        of {members.length} members
+                      </p>
+                    </div>
+                    <p className="text-lg font-bold">
+                      {formatINR(totalOpeningBalance)}
+                    </p>
+                  </div>
+
+                  {openingBalances.filter((ob) => ob.amount !== 0).length >
+                    0 && (
+                    <div className="space-y-2">
+                      {openingBalances
+                        .filter((ob) => ob.amount !== 0)
+                        .map((ob) => (
+                          <div
+                            key={ob.member.id}
+                            className="flex items-center justify-between py-1.5"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={cn(
+                                  "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
+                                  ob.member.active
+                                    ? "bg-primary/10 text-primary"
+                                    : "bg-muted text-muted-foreground",
+                                )}
+                              >
+                                {ob.member.name.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-sm">{ob.member.name}</span>
+                            </div>
+                            <span
+                              className={cn(
+                                "text-sm font-medium",
+                                ob.amount !== 0
+                                  ? "text-foreground"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {ob.amount !== 0 ? formatINR(ob.amount) : "—"}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full"
+                    onClick={() => setIsOpeningBalanceOpen(true)}
+                  >
+                    Set Opening Balances
+                  </Button>
                 </div>
               </SettingsSection>
             </StaggerItem>
@@ -515,7 +724,11 @@ export function SettingsPage() {
                 <Select
                   value=""
                   onValueChange={(uid) => {
-                    if (window.confirm('Are you sure you want to transfer maintainer role?')) {
+                    if (
+                      window.confirm(
+                        "Are you sure you want to transfer maintainer role?",
+                      )
+                    ) {
                       handleMaintainerHandover(uid);
                     }
                   }}
@@ -536,19 +749,19 @@ export function SettingsPage() {
           {/* Current Maintainer (Viewer view) */}
           {!isMaintainer && config && (
             <StaggerItem>
-              <SettingsSection
-                title="Current Maintainer"
-                icon={Crown}
-              >
+              <SettingsSection title="Current Maintainer" icon={Crown}>
                 <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
                   <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <Crown className="h-5 w-5 text-primary" />
                   </div>
                   <div>
                     <p className="font-semibold">
-                      {users.find((u) => u.uid === config.currentMaintainerUid)?.displayName || 'Unknown'}
+                      {users.find((u) => u.uid === config.currentMaintainerUid)
+                        ?.displayName || "Unknown"}
                     </p>
-                    <p className="text-sm text-muted-foreground">Pool Maintainer</p>
+                    <p className="text-sm text-muted-foreground">
+                      Pool Maintainer
+                    </p>
                   </div>
                 </div>
               </SettingsSection>
@@ -559,7 +772,9 @@ export function SettingsPage() {
           <StaggerItem>
             <Card className="bg-muted/50">
               <CardContent className="p-4 text-center">
-                <p className="text-sm text-muted-foreground">FaF Savings v1.0</p>
+                <p className="text-sm text-muted-foreground">
+                  FaF Savings v1.0
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   Financial management made simple
                 </p>
@@ -583,6 +798,12 @@ export function SettingsPage() {
           onClose={() => setEditingMember(null)}
         />
       )}
+
+      {/* Set Opening Balance Dialog */}
+      <SetOpeningBalanceDialog
+        open={isOpeningBalanceOpen}
+        onClose={() => setIsOpeningBalanceOpen(false)}
+      />
     </AppLayout>
   );
 }

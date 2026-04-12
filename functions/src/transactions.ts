@@ -25,8 +25,12 @@ export const createTransaction = functions.onCall(async (request) => {
   await verifyMaintainer(uid);
 
   const data = request.data as any;
-  if (!data.memberId || !data.amount || data.amount <= 0 || !data.date) {
+  if (!data.amount || data.amount <= 0 || !data.date) {
     throw new functions.https.HttpsError('invalid-argument', 'Invalid transaction data');
+  }
+  // memberId is required for all types except 'interest'
+  if (data.type !== 'interest' && !data.memberId) {
+    throw new functions.https.HttpsError('invalid-argument', 'memberId is required for this transaction type');
   }
   if (data.type === 'deposit' && !data.savingsMonth) {
     throw new functions.https.HttpsError('invalid-argument', 'savingsMonth required for deposits');
@@ -41,14 +45,15 @@ export const createTransaction = functions.onCall(async (request) => {
     const stats = statsDoc.data()!;
 
     let balanceDelta = 0;
-    if (data.type === 'deposit' || data.type === 'return' || data.type === 'opening_balance') {
+    if (data.type === 'deposit' || data.type === 'return' || data.type === 'opening_balance' || data.type === 'interest') {
       balanceDelta = data.amount;
     } else if (data.type === 'withdrawal') {
       balanceDelta = -data.amount;
     }
 
     const newBalance = stats.poolBalance + balanceDelta;
-    if (newBalance < 0) {
+    // Interest and opening_balance are exempt from balance check
+    if (newBalance < 0 && data.type !== 'interest' && data.type !== 'opening_balance') {
       throw new functions.https.HttpsError(
         'failed-precondition',
         `Insufficient pool balance. Available: ${stats.poolBalance}, Requested: ${data.amount}`
@@ -56,9 +61,8 @@ export const createTransaction = functions.onCall(async (request) => {
     }
 
     const txRef = db.collection('transactions').doc();
-    tx.set(txRef, {
+    const txData: Record<string, any> = {
       type: data.type,
-      memberId: data.memberId,
       amount: data.amount,
       date: admin.firestore.Timestamp.fromDate(new Date(data.date)),
       fy,
@@ -68,7 +72,12 @@ export const createTransaction = functions.onCall(async (request) => {
       createdByUid: uid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    // Only include memberId if provided (not for interest)
+    if (data.memberId) {
+      txData.memberId = data.memberId;
+    }
+    tx.set(txRef, txData);
 
     const updates: Record<string, any> = {
       poolBalance: newBalance,
@@ -82,6 +91,9 @@ export const createTransaction = functions.onCall(async (request) => {
     }
     if (data.type === 'withdrawal') {
       updates.totalWithdrawal = (stats.totalWithdrawal || 0) + data.amount;
+    }
+    if (data.type === 'interest') {
+      updates.totalInterest = (stats.totalInterest || 0) + data.amount;
     }
 
     tx.update(statsRef, updates);

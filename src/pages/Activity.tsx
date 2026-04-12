@@ -13,7 +13,7 @@ import { formatINR, getCurrentFY } from '@/utils/financialYear';
 import type { TransactionDoc, MemberDoc } from '@/types';
 import { EditTransactionDialog } from '@/components/transactions/EditTransactionDialog';
 import { VoidTransactionDialog } from '@/components/transactions/VoidTransactionDialog';
-import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar } from 'lucide-react';
+import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { StaggerContainer, StaggerItem } from '@/components/animations/PageTransition';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
@@ -45,6 +45,12 @@ const txTypeConfig = {
     color: 'bg-purple-500', 
     icon: Wallet,
     badge: 'outline' as const
+  },
+  interest: { 
+    label: 'Interest', 
+    color: 'bg-amber-500', 
+    icon: TrendingUp,
+    badge: 'secondary' as const
   },
 };
 

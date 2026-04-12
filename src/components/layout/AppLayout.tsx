@@ -1,10 +1,10 @@
-import { ReactNode, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/providers/AuthProvider';
-import { logout } from '@/lib/auth';
-import { getCurrentFY } from '@/utils/financialYear';
-import { cn } from '@/lib/utils';
-import { useDarkMode } from '@/hooks/useDarkMode';
+import { ReactNode, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/providers/AuthProvider";
+import { logout } from "@/lib/auth";
+import { getCurrentFY } from "@/utils/financialYear";
+import { cn } from "@/lib/utils";
+import { useDarkMode } from "@/hooks/useDarkMode";
 import {
   LayoutDashboard,
   Users,
@@ -13,17 +13,18 @@ import {
   LogOut,
   Moon,
   Sun,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { BottomNav } from './BottomNav';
-import { MobileHeader } from './MobileHeader';
-import { AddTransactionDialog } from '@/components/transactions/AddTransactionDialog';
+  Plus,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BottomNav } from "./BottomNav";
+import { MobileHeader } from "./MobileHeader";
+import { AddTransactionDialog } from "@/components/transactions/AddTransactionDialog";
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/members', label: 'Members', icon: Users },
-  { path: '/activity', label: 'Activity', icon: Activity },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: "/", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/members", label: "Members", icon: Users },
+  { path: "/activity", label: "Activity", icon: Activity },
+  { path: "/settings", label: "Settings", icon: Settings },
 ];
 
 interface AppLayoutProps {
@@ -31,10 +32,7 @@ interface AppLayoutProps {
   hideHeader?: boolean;
 }
 
-export function AppLayout({ 
-  children, 
-  hideHeader = false 
-}: AppLayoutProps) {
+export function AppLayout({ children, hideHeader = false }: AppLayoutProps) {
   const { user, isMaintainer } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -43,11 +41,13 @@ export function AppLayout({
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   const currentFY = getCurrentFY();
-  const pageTitle = navItems.find((item) => item.path === location.pathname)?.label;
+  const pageTitle = navItems.find(
+    (item) => item.path === location.pathname,
+  )?.label;
 
   return (
     <div className="min-h-screen bg-background">
@@ -71,10 +71,10 @@ export function AppLayout({
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                     isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-muted'
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted",
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -82,6 +82,19 @@ export function AppLayout({
                 </Link>
               );
             })}
+
+            {/* Add Transaction Button - Desktop only */}
+            {isMaintainer && (
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full justify-start gap-2 mt-4"
+                onClick={() => setShowAddDialog(true)}
+              >
+                <Plus className="h-4 w-4" />
+                Add Transaction
+              </Button>
+            )}
           </nav>
 
           <div className="space-y-2 pt-4 border-t">
@@ -91,8 +104,12 @@ export function AppLayout({
               className="w-full justify-start gap-2"
               onClick={toggleDarkMode}
             >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              {darkMode ? 'Light Mode' : 'Dark Mode'}
+              {darkMode ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+              {darkMode ? "Light Mode" : "Dark Mode"}
             </Button>
             <Button
               variant="ghost"
@@ -115,19 +132,19 @@ export function AppLayout({
             <h2 className="text-2xl font-semibold">{pageTitle}</h2>
             <p className="text-sm text-muted-foreground">
               Maintainer: {user?.displayName || user?.email}
-              {isMaintainer && ' (You)'}
+              {isMaintainer && " (You)"}
             </p>
           </div>
         </header>
-        
+
         {/* Page Content */}
         <div className="p-4 lg:p-6">{children}</div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <BottomNav 
-        onAddTransaction={() => setShowAddDialog(true)} 
-        showAddButton={isMaintainer} 
+      <BottomNav
+        onAddTransaction={() => setShowAddDialog(true)}
+        showAddButton={isMaintainer}
       />
 
       {/* Add Transaction Dialog - available from any page */}
@@ -137,5 +154,3 @@ export function AppLayout({
     </div>
   );
 }
-
-

@@ -28,7 +28,7 @@ export function calculatePoolBalance(transactions: LightweightTransaction[]): nu
   return transactions
     .filter(t => t.status === 'active')
     .reduce((sum, t) => {
-      if (t.type === 'deposit' || t.type === 'return' || t.type === 'opening_balance') {
+      if (t.type === 'deposit' || t.type === 'return' || t.type === 'opening_balance' || t.type === 'interest') {
         return sum + t.amount;
       }
       if (t.type === 'withdrawal') {

@@ -1,10 +1,19 @@
-import { runTransaction, collection, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db } from './firebase';
-import type { TransactionType } from '@/types';
+import {
+  runTransaction,
+  collection,
+  doc,
+  serverTimestamp,
+  Timestamp,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
+import { db } from "./firebase";
+import type { TransactionType } from "@/types";
 
 interface CreateTransactionParams {
   type: TransactionType;
-  memberId: string;
+  memberId?: string;
   amount: number;
   date: Date;
   savingsMonth?: string;
@@ -13,52 +22,64 @@ interface CreateTransactionParams {
 }
 
 export async function createTransaction(params: CreateTransactionParams) {
-  const { type, memberId, amount, date, savingsMonth, notes, createdByUid } = params;
-  
+  const { type, memberId, amount, date, savingsMonth, notes, createdByUid } =
+    params;
+
   const fy = getFY(date);
 
   const result = await runTransaction(db, async (transaction) => {
-    const statsRef = doc(db, 'stats', 'current');
+    const statsRef = doc(db, "stats", "current");
     const statsDoc = await transaction.get(statsRef);
-    
+
     if (!statsDoc.exists()) {
-      throw new Error('Stats document not found. Please run seed script first.');
+      throw new Error(
+        "Stats document not found. Please run seed script first.",
+      );
     }
 
     const stats = statsDoc.data();
-    
+
     // Calculate balance delta
+    // opening_balance: amount can be positive or negative
+    // deposit/return/interest: always positive amount, adds to pool
+    // withdrawal: always positive amount, subtracts from pool
     let balanceDelta = 0;
-    if (type === 'deposit' || type === 'return' || type === 'opening_balance') {
+    if (type === "deposit" || type === "return") {
       balanceDelta = amount;
-    } else if (type === 'withdrawal') {
+    } else if (type === "opening_balance" || type === "interest") {
+      balanceDelta = amount; // can be positive or negative
+    } else if (type === "withdrawal") {
       balanceDelta = -amount;
     }
 
     const newBalance = stats.poolBalance + balanceDelta;
-    
-    // Enforce non-negative balance
-    if (newBalance < 0) {
+
+    // Enforce non-negative balance (opening_balance and interest exempted)
+    if (newBalance < 0 && type !== "opening_balance" && type !== "interest") {
       throw new Error(
-        `Insufficient pool balance. Available: ₹${stats.poolBalance}, Requested: ₹${amount}`
+        `Insufficient pool balance. Available: ₹${stats.poolBalance}, Requested: ₹${amount}`,
       );
     }
 
     // Create transaction document
-    const txRef = doc(collection(db, 'transactions'));
-    transaction.set(txRef, {
+    const txRef = doc(collection(db, "transactions"));
+    const txData: Record<string, any> = {
       type,
-      memberId,
       amount,
       date: Timestamp.fromDate(date),
       fy,
       savingsMonth: savingsMonth || null,
       notes: notes || null,
-      status: 'active',
+      status: "active",
       createdByUid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    });
+    };
+    // Only include memberId if provided (not for interest transactions)
+    if (memberId) {
+      txData.memberId = memberId;
+    }
+    transaction.set(txRef, txData);
 
     // Update stats
     const updates: Record<string, any> = {
@@ -66,14 +87,17 @@ export async function createTransaction(params: CreateTransactionParams) {
       updatedAt: serverTimestamp(),
     };
 
-    if (type === 'deposit' || type === 'opening_balance') {
+    if (type === "deposit" || type === "opening_balance") {
       updates.totalDeposit = (stats.totalDeposit || 0) + amount;
     }
-    if (type === 'return') {
+    if (type === "return") {
       updates.totalReturn = (stats.totalReturn || 0) + amount;
     }
-    if (type === 'withdrawal') {
+    if (type === "withdrawal") {
       updates.totalWithdrawal = (stats.totalWithdrawal || 0) + amount;
+    }
+    if (type === "interest") {
+      updates.totalInterest = (stats.totalInterest || 0) + amount;
     }
 
     transaction.update(statsRef, updates);
@@ -98,29 +122,29 @@ export async function updateTransaction(params: UpdateTransactionParams) {
   const { txId, type, memberId, amount, date, savingsMonth, notes } = params;
 
   const result = await runTransaction(db, async (transaction) => {
-    const txRef = doc(db, 'transactions', txId);
+    const txRef = doc(db, "transactions", txId);
     const txDoc = await transaction.get(txRef);
 
     if (!txDoc.exists()) {
-      throw new Error('Transaction not found');
+      throw new Error("Transaction not found");
     }
 
     const oldTx = txDoc.data();
-    
-    if (oldTx.status === 'void') {
-      throw new Error('Cannot edit a voided transaction');
+
+    if (oldTx.status === "void") {
+      throw new Error("Cannot edit a voided transaction");
     }
 
-    const statsRef = doc(db, 'stats', 'current');
+    const statsRef = doc(db, "stats", "current");
     const statsDoc = await transaction.get(statsRef);
     const stats = statsDoc.data()!;
 
     // Calculate old delta
     let oldDelta = 0;
-    if (['deposit', 'return', 'opening_balance'].includes(oldTx.type)) {
+    if (["deposit", "return", "opening_balance", "interest"].includes(oldTx.type)) {
       oldDelta = oldTx.amount;
     }
-    if (oldTx.type === 'withdrawal') {
+    if (oldTx.type === "withdrawal") {
       oldDelta = -oldTx.amount;
     }
 
@@ -128,18 +152,26 @@ export async function updateTransaction(params: UpdateTransactionParams) {
     const newType = type || oldTx.type;
     const newAmount = amount ?? oldTx.amount;
     let newDelta = 0;
-    if (['deposit', 'return', 'opening_balance'].includes(newType)) {
+    if (["deposit", "return", "opening_balance", "interest"].includes(newType)) {
       newDelta = newAmount;
     }
-    if (newType === 'withdrawal') {
+    if (newType === "withdrawal") {
       newDelta = -newAmount;
     }
 
     const balanceChange = newDelta - oldDelta;
     const newBalance = stats.poolBalance + balanceChange;
 
-    if (newBalance < 0) {
-      throw new Error(`Insufficient pool balance. Available: ₹${stats.poolBalance}`);
+    if (
+      newBalance < 0 &&
+      newType !== "opening_balance" &&
+      newType !== "interest" &&
+      oldTx.type !== "opening_balance" &&
+      oldTx.type !== "interest"
+    ) {
+      throw new Error(
+        `Insufficient pool balance. Available: ₹${stats.poolBalance}`,
+      );
     }
 
     // Update transaction
@@ -166,35 +198,54 @@ export async function updateTransaction(params: UpdateTransactionParams) {
 
     if (oldTx.type !== newType) {
       // Type changed: subtract from old total, add to new total
-      if (oldTx.type === 'deposit' || oldTx.type === 'opening_balance') {
+      if (oldTx.type === "deposit" || oldTx.type === "opening_balance") {
         statsUpdates.totalDeposit = (stats.totalDeposit || 0) - oldTx.amount;
       }
-      if (oldTx.type === 'return') {
+      if (oldTx.type === "return") {
         statsUpdates.totalReturn = (stats.totalReturn || 0) - oldTx.amount;
       }
-      if (oldTx.type === 'withdrawal') {
-        statsUpdates.totalWithdrawal = (stats.totalWithdrawal || 0) - oldTx.amount;
+      if (oldTx.type === "withdrawal") {
+        statsUpdates.totalWithdrawal =
+          (stats.totalWithdrawal || 0) - oldTx.amount;
       }
-      
-      if (newType === 'deposit' || newType === 'opening_balance') {
-        statsUpdates.totalDeposit = ((statsUpdates.totalDeposit ?? stats.totalDeposit) || 0) + newAmount;
+      if (oldTx.type === "interest") {
+        statsUpdates.totalInterest = (stats.totalInterest || 0) - oldTx.amount;
       }
-      if (newType === 'return') {
-        statsUpdates.totalReturn = ((statsUpdates.totalReturn ?? stats.totalReturn) || 0) + newAmount;
+
+      if (newType === "deposit" || newType === "opening_balance") {
+        statsUpdates.totalDeposit =
+          ((statsUpdates.totalDeposit ?? stats.totalDeposit) || 0) + newAmount;
       }
-      if (newType === 'withdrawal') {
-        statsUpdates.totalWithdrawal = ((statsUpdates.totalWithdrawal ?? stats.totalWithdrawal) || 0) + newAmount;
+      if (newType === "return") {
+        statsUpdates.totalReturn =
+          ((statsUpdates.totalReturn ?? stats.totalReturn) || 0) + newAmount;
+      }
+      if (newType === "withdrawal") {
+        statsUpdates.totalWithdrawal =
+          ((statsUpdates.totalWithdrawal ?? stats.totalWithdrawal) || 0) +
+          newAmount;
+      }
+      if (newType === "interest") {
+        statsUpdates.totalInterest =
+          ((statsUpdates.totalInterest ?? stats.totalInterest) || 0) + newAmount;
       }
     } else if (oldTx.amount !== newAmount) {
       // Amount changed
-      if (newType === 'deposit' || newType === 'opening_balance') {
-        statsUpdates.totalDeposit = (stats.totalDeposit || 0) + (newAmount - oldTx.amount);
+      if (newType === "deposit" || newType === "opening_balance") {
+        statsUpdates.totalDeposit =
+          (stats.totalDeposit || 0) + (newAmount - oldTx.amount);
       }
-      if (newType === 'return') {
-        statsUpdates.totalReturn = (stats.totalReturn || 0) + (newAmount - oldTx.amount);
+      if (newType === "return") {
+        statsUpdates.totalReturn =
+          (stats.totalReturn || 0) + (newAmount - oldTx.amount);
       }
-      if (newType === 'withdrawal') {
-        statsUpdates.totalWithdrawal = (stats.totalWithdrawal || 0) + (newAmount - oldTx.amount);
+      if (newType === "withdrawal") {
+        statsUpdates.totalWithdrawal =
+          (stats.totalWithdrawal || 0) + (newAmount - oldTx.amount);
+      }
+      if (newType === "interest") {
+        statsUpdates.totalInterest =
+          (stats.totalInterest || 0) + (newAmount - oldTx.amount);
       }
     }
 
@@ -215,29 +266,29 @@ export async function voidTransaction(params: VoidTransactionParams) {
   const { txId, reason } = params;
 
   const result = await runTransaction(db, async (transaction) => {
-    const txRef = doc(db, 'transactions', txId);
+    const txRef = doc(db, "transactions", txId);
     const txDoc = await transaction.get(txRef);
 
     if (!txDoc.exists()) {
-      throw new Error('Transaction not found');
+      throw new Error("Transaction not found");
     }
 
     const oldTx = txDoc.data();
-    
-    if (oldTx.status === 'void') {
-      throw new Error('Transaction already voided');
+
+    if (oldTx.status === "void") {
+      throw new Error("Transaction already voided");
     }
 
-    const statsRef = doc(db, 'stats', 'current');
+    const statsRef = doc(db, "stats", "current");
     const statsDoc = await transaction.get(statsRef);
     const stats = statsDoc.data()!;
 
     // Reverse the transaction
     let reversalDelta = 0;
-    if (['deposit', 'return', 'opening_balance'].includes(oldTx.type)) {
+    if (["deposit", "return", "opening_balance", "interest"].includes(oldTx.type)) {
       reversalDelta = -oldTx.amount;
     }
-    if (oldTx.type === 'withdrawal') {
+    if (oldTx.type === "withdrawal") {
       reversalDelta = oldTx.amount;
     }
 
@@ -245,7 +296,7 @@ export async function voidTransaction(params: VoidTransactionParams) {
 
     // Void transaction
     transaction.update(txRef, {
-      status: 'void',
+      status: "void",
       voidReason: reason,
       updatedAt: serverTimestamp(),
     });
@@ -256,19 +307,160 @@ export async function voidTransaction(params: VoidTransactionParams) {
       updatedAt: serverTimestamp(),
     };
 
-    if (oldTx.type === 'deposit' || oldTx.type === 'opening_balance') {
+    if (oldTx.type === "deposit" || oldTx.type === "opening_balance") {
       statsUpdates.totalDeposit = (stats.totalDeposit || 0) - oldTx.amount;
     }
-    if (oldTx.type === 'return') {
+    if (oldTx.type === "return") {
       statsUpdates.totalReturn = (stats.totalReturn || 0) - oldTx.amount;
     }
-    if (oldTx.type === 'withdrawal') {
-      statsUpdates.totalWithdrawal = (stats.totalWithdrawal || 0) - oldTx.amount;
+    if (oldTx.type === "withdrawal") {
+      statsUpdates.totalWithdrawal =
+        (stats.totalWithdrawal || 0) - oldTx.amount;
+    }
+    if (oldTx.type === "interest") {
+      statsUpdates.totalInterest = (stats.totalInterest || 0) - oldTx.amount;
     }
 
     transaction.update(statsRef, statsUpdates);
 
     return { newBalance };
+  });
+
+  return result;
+}
+
+interface SetOpeningBalanceEntry {
+  memberId: string;
+  amount: number;
+}
+
+interface SetOpeningBalancesParams {
+  entries: SetOpeningBalanceEntry[];
+  openingInterest?: number;
+  date: Date;
+  fy: string;
+  createdByUid: string;
+}
+
+export async function setOpeningBalances(params: SetOpeningBalancesParams) {
+  const { entries, openingInterest, date, fy, createdByUid } = params;
+
+  const result = await runTransaction(db, async (transaction) => {
+    const statsRef = doc(db, "stats", "current");
+    const statsDoc = await transaction.get(statsRef);
+
+    if (!statsDoc.exists()) {
+      throw new Error(
+        "Stats document not found. Please run seed script first.",
+      );
+    }
+
+    const stats = statsDoc.data();
+
+    // Step 1: Find and void all existing active opening_balance transactions
+    const existingObSnap = await getDocs(
+      query(
+        collection(db, "transactions"),
+        where("type", "==", "opening_balance"),
+        where("status", "==", "active"),
+      ),
+    );
+
+    let totalObReversal = 0;
+    for (const obDoc of existingObSnap.docs) {
+      const obData = obDoc.data();
+      totalObReversal += obData.amount;
+      transaction.update(obDoc.ref, {
+        status: "void",
+        voidReason: "Replaced by new opening balance",
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Step 2: Find and void all existing active interest transactions (opening interest)
+    const existingInterestSnap = await getDocs(
+      query(
+        collection(db, "transactions"),
+        where("type", "==", "interest"),
+        where("status", "==", "active"),
+        where("notes", "==", `Opening interest for FY ${fy}`),
+      ),
+    );
+
+    let totalInterestReversal = 0;
+    for (const intDoc of existingInterestSnap.docs) {
+      const intData = intDoc.data();
+      totalInterestReversal += intData.amount;
+      transaction.update(intDoc.ref, {
+        status: "void",
+        voidReason: "Replaced by new opening interest",
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Step 3: Create new opening balance transactions
+    let totalNewOb = 0;
+    for (const entry of entries) {
+      if (entry.amount === 0) continue;
+      totalNewOb += entry.amount;
+      const txRef = doc(collection(db, "transactions"));
+      transaction.set(txRef, {
+        type: "opening_balance",
+        memberId: entry.memberId,
+        amount: entry.amount,
+        date: Timestamp.fromDate(date),
+        fy,
+        savingsMonth: null,
+        notes: `Opening balance for FY ${fy}`,
+        status: "active",
+        createdByUid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Step 4: Create opening interest transaction if provided
+    let totalNewInterest = 0;
+    if (openingInterest && openingInterest !== 0) {
+      totalNewInterest = openingInterest;
+      const interestTxRef = doc(collection(db, "transactions"));
+      transaction.set(interestTxRef, {
+        type: "interest",
+        amount: openingInterest,
+        date: Timestamp.fromDate(date),
+        fy,
+        savingsMonth: null,
+        notes: `Opening interest for FY ${fy}`,
+        status: "active",
+        createdByUid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Step 5: Update stats - adjust poolBalance by the net change
+    const obNetChange = totalNewOb - totalObReversal;
+    const interestNetChange = totalNewInterest - totalInterestReversal;
+    const totalNetChange = obNetChange + interestNetChange;
+    
+    const newPoolBalance = stats.poolBalance + totalNetChange;
+    const newTotalDeposit =
+      (stats.totalDeposit || 0) - totalObReversal + totalNewOb;
+    const newTotalInterest =
+      (stats.totalInterest || 0) - totalInterestReversal + totalNewInterest;
+
+    transaction.update(statsRef, {
+      poolBalance: newPoolBalance,
+      totalDeposit: newTotalDeposit,
+      totalInterest: newTotalInterest,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      voidedCount: existingObSnap.docs.length + existingInterestSnap.docs.length,
+      createdCount: entries.filter((e) => e.amount !== 0).length + (openingInterest && openingInterest !== 0 ? 1 : 0),
+      newPoolBalance,
+    };
   });
 
   return result;

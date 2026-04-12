@@ -23,20 +23,24 @@ service cloud.firestore {
     match /transactions/{txId} {
       allow read: if isAuthenticated();
       
-      // Allow create only for maintainer with balance validation
-      allow create: if isMaintainer() && 
-                       request.resource.data.amount > 0 &&
+      // Allow create only for maintainer with validation
+      allow create: if isMaintainer() &&
                        request.resource.data.status == 'active' &&
-                       // Verify new balance won't go negative
-                       get(/databases/$(database)/documents/stats/current).data.poolBalance + 
-                       (request.resource.data.type in ['deposit', 'return', 'opening_balance'] 
-                        ? request.resource.data.amount 
-                        : -request.resource.data.amount) >= 0;
+                       // opening_balance: allow any non-zero amount (positive or negative), skip pool balance check
+                       // other types: must be positive amount, and pool must not go negative
+                       (request.resource.data.type == 'opening_balance'
+                         ? request.resource.data.amount != 0
+                         : request.resource.data.amount > 0 &&
+                           get(/databases/$(database)/documents/stats/current).data.poolBalance +
+                           (request.resource.data.type in ['deposit', 'return']
+                             ? request.resource.data.amount
+                             : -request.resource.data.amount) >= 0);
       
-      // Allow update only for maintainer (for voiding)
-      allow update: if isMaintainer() && 
+      // Allow update only for maintainer
+      allow update: if isMaintainer() &&
+                       // Voiding: only status, voidReason, updatedAt fields
                        (request.resource.data.keys().hasOnly(['status', 'voidReason', 'updatedAt']) ||
-                        // For edits, re-validate balance
+                        // Full edit: re-validate pool balance is non-negative after edit
                         get(/databases/$(database)/documents/stats/current).data.poolBalance >= 0);
       
       allow delete: if false;

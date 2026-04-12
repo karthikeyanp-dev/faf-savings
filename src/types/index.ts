@@ -1,7 +1,7 @@
 import type { Timestamp } from 'firebase/firestore';
 
 export type Role = 'maintainer' | 'viewer';
-export type TransactionType = 'deposit' | 'withdrawal' | 'return' | 'opening_balance';
+export type TransactionType = 'deposit' | 'withdrawal' | 'return' | 'opening_balance' | 'interest';
 export type TransactionStatus = 'active' | 'void';
 
 export interface UserDoc {
@@ -54,6 +54,7 @@ export interface StatsCurrent {
   totalDeposit: number;
   totalReturn: number;
   totalWithdrawal: number;
+  totalInterest: number;
   updatedAt: Timestamp;
 }
 
