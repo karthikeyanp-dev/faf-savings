@@ -64,7 +64,7 @@ function OpeningBalanceFormContent({
       <div className="bg-muted/50 rounded-xl p-3 space-y-1">
         <p className="text-xs text-muted-foreground">
           Set each member's accumulated balance from before FY {fy}. This will
-          be recorded as an opening balance transaction dated April 1,{" "}
+          be recorded as a previous balance transaction dated April 1,{" "}
           {fy.split("-")[0]}.
         </p>
         <div className="flex justify-between text-sm">
@@ -117,7 +117,7 @@ function OpeningBalanceFormContent({
               </Label>
               {existingBalances[member.id] !== 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Current opening balance: ₹
+                  Current previous balance: ₹
                   {existingBalances[member.id].toLocaleString("en-IN")}
                 </p>
               )}
@@ -231,12 +231,12 @@ export function SetOpeningBalanceDialog({
         { merge: true },
       );
 
-      toast.success("Opening balances saved");
+      toast.success("Previous balances saved");
       resetForm();
       queryClient.invalidateQueries({ queryKey: ["config"] });
       onClose();
     } catch (error: any) {
-      toast.error(error.message || "Failed to set opening balances");
+      toast.error(error.message || "Failed to set previous balances");
     } finally {
       setIsSubmitting(false);
     }
@@ -261,7 +261,7 @@ export function SetOpeningBalanceDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="flex h-[min(88vh,48rem)] w-[calc(100vw-1.5rem)] max-w-lg flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Set Opening Balances</DialogTitle>
+          <DialogTitle>Set Previous Balances</DialogTitle>
           <DialogDescription>
             Enter each member's accumulated balance from before FY {currentFY}
           </DialogDescription>

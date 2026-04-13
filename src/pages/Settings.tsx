@@ -625,11 +625,11 @@ export function SettingsPage() {
             </StaggerItem>
           )}
 
-          {/* Opening Balances */}
+          {/* Previous Balances */}
           {isMaintainer && (
             <StaggerItem>
               <SettingsSection
-                title="Opening Balances"
+                title="Previous Balances"
                 description={`Accumulated balances from before FY ${currentFY}`}
                 icon={Wallet}
               >
@@ -637,7 +637,7 @@ export function SettingsPage() {
                   <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
                     <div>
                       <p className="text-sm font-medium">
-                        Total Opening Balance
+                        Total Previous Balance
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {openingBalances.filter((ob) => ob.amount !== 0).length}{" "}
@@ -703,7 +703,7 @@ export function SettingsPage() {
                     className="w-full"
                     onClick={() => setIsOpeningBalanceOpen(true)}
                   >
-                    Set Opening Balances
+                    Set Previous Balances
                   </Button>
                 </div>
               </SettingsSection>
@@ -796,7 +796,7 @@ export function SettingsPage() {
         />
       )}
 
-      {/* Set Opening Balance Dialog */}
+      {/* Set Previous Balance Dialog */}
       <SetOpeningBalanceDialog
         open={isOpeningBalanceOpen}
         onClose={() => setIsOpeningBalanceOpen(false)}

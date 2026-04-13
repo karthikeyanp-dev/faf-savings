@@ -389,7 +389,7 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
       totalObReversal += obData.amount;
       transaction.update(obDoc.ref, {
         status: "void",
-        voidReason: "Replaced by new opening balance",
+        voidReason: "Replaced by new previous balance",
         updatedAt: serverTimestamp(),
       });
     }
@@ -419,7 +419,7 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
         date: Timestamp.fromDate(date),
         fy,
         savingsMonth: null,
-        notes: `Opening balance for FY ${fy}`,
+        notes: `Previous balance for FY ${fy}`,
         status: "active",
         createdByUid,
         createdAt: serverTimestamp(),

@@ -23,7 +23,16 @@ import {
   getTotalOpeningBalance,
 } from "@/utils/financialYear";
 import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
-import { Wallet, Landmark, ArrowDownRight, CalendarCheck, TrendingUp } from "lucide-react";
+import {
+  Wallet,
+  Landmark,
+  ArrowDownRight,
+  CalendarRange,
+  TrendingUp,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Percent,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -48,7 +57,7 @@ function SummaryCard({
 }) {
   return (
     <Card className="h-full">
-      <CardContent className="p-4">
+      <CardContent className="p-4 h-full flex flex-col justify-center">
         <div className="flex items-center gap-3">
           <div className={cn("p-2.5 rounded-xl", iconBg)}>
             <Icon className="h-4.5 w-4.5 text-white" />
@@ -64,6 +73,82 @@ function SummaryCard({
               </p>
             )}
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// FY Stats Card (highlighted) — 3 rows: Deposited, Withdrawn, Interests
+function FYStatsCard({
+  fy,
+  deposited,
+  withdrawn,
+  interests,
+}: {
+  fy: string;
+  deposited: number;
+  withdrawn: number;
+  interests: number;
+}) {
+  const rows = [
+    {
+      label: "Deposited",
+      value: deposited,
+      icon: ArrowDownToLine,
+      tint: "text-emerald-200",
+    },
+    {
+      label: "Withdrawn",
+      value: withdrawn,
+      icon: ArrowUpFromLine,
+      tint: "text-rose-200",
+    },
+    {
+      label: "Interests",
+      value: interests,
+      icon: Percent,
+      tint: "text-amber-200",
+    },
+  ];
+
+  return (
+    <Card
+      className="h-full border-0 shadow-lg shadow-black/20 text-white"
+      style={{ backgroundColor: "#046565" }}
+    >
+      <CardContent className="p-4 h-full flex flex-col">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="p-2 rounded-xl bg-white/15 backdrop-blur-sm">
+            <CalendarRange className="h-4 w-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Current FY Stats
+            </p>
+            <p className="text-xs font-bold text-white truncate">{fy}</p>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col justify-between gap-1.5">
+          {rows.map((row) => {
+            const RowIcon = row.icon;
+            return (
+              <div
+                key={row.label}
+                className="flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <RowIcon className={cn("h-3.5 w-3.5", row.tint)} />
+                  <span className="text-xs text-white/80 truncate">
+                    {row.label}
+                  </span>
+                </div>
+                <span className="text-sm font-bold text-white truncate">
+                  {formatINR(row.value)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -136,7 +221,7 @@ function MemberCard({
           </div>
           <div>
             <p className="text-lg font-bold">{formatINR(openingBalance)}</p>
-            <p className="text-xs text-muted-foreground">Opening Bal</p>
+            <p className="text-xs text-muted-foreground">Previous Bal</p>
           </div>
           <div>
             <p className="text-lg font-bold">{formatINR(fyDeposited)}</p>
@@ -223,9 +308,6 @@ export function DashboardPage() {
     openingInterest,
   );
 
-  const totalDeposited = activeTransactions
-    .filter((t) => t.type === "deposit")
-    .reduce((sum, t) => sum + t.amount, 0);
   const totalInterest = activeTransactions
     .filter((t) => t.type === "interest")
     .reduce((sum, t) => sum + t.amount, 0);
@@ -237,53 +319,40 @@ export function DashboardPage() {
     );
     return sum + Math.max(0, -net);
   }, 0);
+  const totalDepositsAllTime =
+    availableBalance + totalReceivables - totalInterest - openingInterest;
   const fyDeposited = fyTransactions
     .filter((t) => t.type === "deposit")
     .reduce((sum, t) => sum + t.amount, 0);
+  const fyWithdrawn = fyTransactions
+    .filter((t) => t.type === "withdrawal")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const fyInterest = fyTransactions
+    .filter((t) => t.type === "interest")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalInterestsEarned = totalInterest + openingInterest;
 
   const summaryCards = [
     {
       title: "Total Deposited",
-      value: formatINR(totalDeposited),
+      value: formatINR(totalDepositsAllTime),
       icon: Landmark,
-      subtitle: "Lifetime",
+      subtitle: "All inflows into the pool",
       iconBg: "bg-emerald-500",
     },
-    ...(totalOpeningBalance !== 0
-      ? [
-          {
-            title: "Opening Balances",
-            value: formatINR(totalOpeningBalance),
-            icon: Wallet,
-            subtitle: "From previous FYs",
-            iconBg: "bg-purple-500",
-          },
-        ]
-      : []),
-    ...(totalInterest !== 0
-      ? [
-          {
-            title: "Interest Earned",
-            value: formatINR(totalInterest),
-            icon: TrendingUp,
-            subtitle: "Pool interest income",
-            iconBg: "bg-amber-500",
-          },
-        ]
-      : []),
     {
-      title: "Outstanding Dues",
+      title: "Total Outstanding",
       value: formatINR(totalReceivables),
       icon: ArrowDownRight,
-      subtitle: "Amount owed by members",
+      subtitle: "Current dues from members",
       iconBg: "bg-rose-500",
     },
     {
-      title: `FY ${currentFY} Deposits`,
-      value: formatINR(fyDeposited),
-      icon: CalendarCheck,
-      subtitle: `Target: ${formatINR(fyTarget * members.filter((m) => m.active).length)}`,
-      iconBg: "bg-violet-500",
+      title: "Total Interests Earned",
+      value: formatINR(totalInterestsEarned),
+      icon: TrendingUp,
+      subtitle: "Opening + current FY interests",
+      iconBg: "bg-amber-500",
     },
   ];
 
@@ -320,15 +389,25 @@ export function DashboardPage() {
 
         {/* Summary Stats */}
         <section>
-          <div
-            className={`grid grid-cols-1 ${summaryCards.length > 3 ? "sm:grid-cols-4" : "sm:grid-cols-3"} gap-3`}
-          >
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3`}>
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.35 }}
+            >
+              <FYStatsCard
+                fy={currentFY}
+                deposited={fyDeposited}
+                withdrawn={fyWithdrawn}
+                interests={fyInterest}
+              />
+            </motion.div>
             {summaryCards.map((stat, index) => (
               <motion.div
                 key={stat.title}
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 + index * 0.07, duration: 0.35 }}
+                transition={{ delay: 0.17 + index * 0.07, duration: 0.35 }}
               >
                 <SummaryCard {...stat} />
               </motion.div>
@@ -385,13 +464,13 @@ export function DashboardPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Member</TableHead>
+                    <TableHead className="text-right text-muted-foreground/60">
+                      Previous Bal
+                    </TableHead>
                     <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="text-right">Opening Bal</TableHead>
                     <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">FY Deposited</TableHead>
-                    <TableHead className="text-right">FY Target</TableHead>
                     <TableHead className="text-right">Progress</TableHead>
-                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -405,7 +484,10 @@ export function DashboardPage() {
                       getOpeningBalance(openingBalances, member.id),
                     );
                     const receivable = Math.max(0, -net);
-                    const memberOb = getOpeningBalance(openingBalances, member.id);
+                    const memberOb = getOpeningBalance(
+                      openingBalances,
+                      member.id,
+                    );
                     const memberFyDeposited = fyTransactions
                       .filter(
                         (t) => t.memberId === member.id && t.type === "deposit",
@@ -424,6 +506,9 @@ export function DashboardPage() {
                         <TableCell className="font-medium">
                           {member.name}
                         </TableCell>
+                        <TableCell className="text-right text-muted-foreground/60">
+                          {memberOb !== 0 ? formatINR(memberOb) : "—"}
+                        </TableCell>
                         <TableCell
                           className={cn(
                             "text-right font-semibold",
@@ -435,16 +520,10 @@ export function DashboardPage() {
                           {formatINR(net)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {memberOb !== 0 ? formatINR(memberOb) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
                           {formatINR(receivable)}
                         </TableCell>
                         <TableCell className="text-right">
                           {formatINR(memberFyDeposited)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatINR(fyTarget)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center gap-2 justify-end">
@@ -465,13 +544,6 @@ export function DashboardPage() {
                               {progressPct}%
                             </span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={member.active ? "default" : "secondary"}
-                          >
-                            {member.active ? "Active" : "Inactive"}
-                          </Badge>
                         </TableCell>
                       </TableRow>
                     );

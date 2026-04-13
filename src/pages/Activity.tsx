@@ -40,8 +40,8 @@ const txTypeConfig = {
     icon: RotateCcw,
     badge: 'secondary' as const
   },
-  opening_balance: { 
-    label: 'Opening', 
+  opening_balance: {
+    label: 'Previous',
     color: 'bg-purple-500', 
     icon: Wallet,
     badge: 'outline' as const

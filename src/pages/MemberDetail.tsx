@@ -39,7 +39,7 @@ const txTypeConfig = {
   },
   return: { label: "Return", color: "bg-blue-500", icon: RotateCcw },
   opening_balance: {
-    label: "Opening Balance",
+    label: "Previous Balance",
     color: "bg-purple-500",
     icon: Wallet,
   },
@@ -274,7 +274,7 @@ export function MemberDetailPage() {
               <Card className="h-full border-purple-200 dark:border-purple-800">
                 <CardContent className="p-4">
                   <p className="text-xs font-medium text-purple-600 dark:text-purple-400">
-                    Opening Balance
+                    Previous Balance
                   </p>
                   <p className="text-lg font-bold mt-1">
                     {formatINR(openingBalance)}
