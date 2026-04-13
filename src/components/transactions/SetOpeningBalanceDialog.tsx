@@ -260,8 +260,6 @@ export function SetOpeningBalanceDialog({
     onClose();
   };
 
-  const activeMembers = members.filter((m) => m.active);
-
   if (isMobile) {
     return (
       <FullScreenDrawer
@@ -272,7 +270,7 @@ export function SetOpeningBalanceDialog({
         saveLabel={isSubmitting ? "Saving..." : "Save"}
       >
         <OpeningBalanceFormContent
-          members={activeMembers}
+          members={members}
           existingBalances={existingBalances}
           existingInterest={existingInterest}
           amounts={amounts}
@@ -299,7 +297,7 @@ export function SetOpeningBalanceDialog({
         </DialogHeader>
         <div className="px-6 pb-6">
           <OpeningBalanceFormContent
-            members={activeMembers}
+            members={members}
             existingBalances={existingBalances}
             existingInterest={existingInterest}
             amounts={amounts}

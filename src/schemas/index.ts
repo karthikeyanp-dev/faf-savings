@@ -21,15 +21,8 @@ export const transactionSchema = z
         path: ["amount"],
       });
     }
-    if (data.type === "opening_balance" && data.amount === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Amount cannot be 0",
-        path: ["amount"],
-      });
-    }
-    // Require memberId for all types except 'interest' and 'opening_balance'
-    if (data.type !== "interest" && data.type !== "opening_balance" && !data.memberId) {
+    // Require memberId for all types except 'interest'
+    if (data.type !== "interest" && !data.memberId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Member is required",

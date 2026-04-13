@@ -25,8 +25,11 @@ export const createTransaction = functions.onCall(async (request) => {
   await verifyMaintainer(uid);
 
   const data = request.data as any;
-  if (!data.amount || data.amount <= 0 || !data.date) {
+  if (typeof data.amount !== 'number' || Number.isNaN(data.amount) || !data.date) {
     throw new functions.https.HttpsError('invalid-argument', 'Invalid transaction data');
+  }
+  if (data.type !== 'opening_balance' && data.amount <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Amount must be greater than 0');
   }
   // memberId is required for all types except 'interest'
   if (data.type !== 'interest' && !data.memberId) {

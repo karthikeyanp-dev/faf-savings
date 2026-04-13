@@ -345,6 +345,24 @@ interface SetOpeningBalancesParams {
 export async function setOpeningBalances(params: SetOpeningBalancesParams) {
   const { entries, openingInterest, date, fy, createdByUid } = params;
 
+  const [existingObSnap, existingInterestSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, "transactions"),
+        where("type", "==", "opening_balance"),
+        where("status", "==", "active"),
+      ),
+    ),
+    getDocs(
+      query(
+        collection(db, "transactions"),
+        where("type", "==", "interest"),
+        where("status", "==", "active"),
+        where("notes", "==", `Opening interest for FY ${fy}`),
+      ),
+    ),
+  ]);
+
   const result = await runTransaction(db, async (transaction) => {
     const statsRef = doc(db, "stats", "current");
     const statsDoc = await transaction.get(statsRef);
@@ -356,19 +374,18 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
     }
 
     const stats = statsDoc.data();
-
-    // Step 1: Find and void all existing active opening_balance transactions
-    const existingObSnap = await getDocs(
-      query(
-        collection(db, "transactions"),
-        where("type", "==", "opening_balance"),
-        where("status", "==", "active"),
-      ),
+    const existingObDocs = await Promise.all(
+      existingObSnap.docs.map((snapshot) => transaction.get(snapshot.ref)),
+    );
+    const existingInterestDocs = await Promise.all(
+      existingInterestSnap.docs.map((snapshot) => transaction.get(snapshot.ref)),
     );
 
     let totalObReversal = 0;
-    for (const obDoc of existingObSnap.docs) {
+    for (const obDoc of existingObDocs) {
+      if (!obDoc.exists()) continue;
       const obData = obDoc.data();
+      if (obData.status !== "active") continue;
       totalObReversal += obData.amount;
       transaction.update(obDoc.ref, {
         status: "void",
@@ -377,19 +394,11 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
       });
     }
 
-    // Step 2: Find and void all existing active interest transactions (opening interest)
-    const existingInterestSnap = await getDocs(
-      query(
-        collection(db, "transactions"),
-        where("type", "==", "interest"),
-        where("status", "==", "active"),
-        where("notes", "==", `Opening interest for FY ${fy}`),
-      ),
-    );
-
     let totalInterestReversal = 0;
-    for (const intDoc of existingInterestSnap.docs) {
+    for (const intDoc of existingInterestDocs) {
+      if (!intDoc.exists()) continue;
       const intData = intDoc.data();
+      if (intData.status !== "active") continue;
       totalInterestReversal += intData.amount;
       transaction.update(intDoc.ref, {
         status: "void",
@@ -398,7 +407,6 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
       });
     }
 
-    // Step 3: Create new opening balance transactions
     let totalNewOb = 0;
     for (const entry of entries) {
       if (entry.amount === 0) continue;
@@ -419,9 +427,8 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
       });
     }
 
-    // Step 4: Create opening interest transaction if provided
     let totalNewInterest = 0;
-    if (openingInterest && openingInterest !== 0) {
+    if (openingInterest !== undefined && openingInterest !== 0) {
       totalNewInterest = openingInterest;
       const interestTxRef = doc(collection(db, "transactions"));
       transaction.set(interestTxRef, {
@@ -438,11 +445,10 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
       });
     }
 
-    // Step 5: Update stats - adjust poolBalance by the net change
     const obNetChange = totalNewOb - totalObReversal;
     const interestNetChange = totalNewInterest - totalInterestReversal;
     const totalNetChange = obNetChange + interestNetChange;
-    
+
     const newPoolBalance = stats.poolBalance + totalNetChange;
     const newTotalDeposit =
       (stats.totalDeposit || 0) - totalObReversal + totalNewOb;
@@ -457,8 +463,8 @@ export async function setOpeningBalances(params: SetOpeningBalancesParams) {
     });
 
     return {
-      voidedCount: existingObSnap.docs.length + existingInterestSnap.docs.length,
-      createdCount: entries.filter((e) => e.amount !== 0).length + (openingInterest && openingInterest !== 0 ? 1 : 0),
+      voidedCount: existingObDocs.filter((snapshot) => snapshot.exists() && snapshot.data().status === "active").length + existingInterestDocs.filter((snapshot) => snapshot.exists() && snapshot.data().status === "active").length,
+      createdCount: entries.filter((entry) => entry.amount !== 0).length + (openingInterest !== undefined && openingInterest !== 0 ? 1 : 0),
       newPoolBalance,
     };
   });
