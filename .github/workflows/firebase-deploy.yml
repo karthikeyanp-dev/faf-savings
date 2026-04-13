@@ -58,4 +58,4 @@ jobs:
           fi
 
       - name: Deploy to Firebase
-        run: npx firebase-tools deploy --project "$FIREBASE_PROJECT_ID" --non-interactive
+        run: npx firebase-tools@15.14.0 deploy --project "$FIREBASE_PROJECT_ID" --non-interactive
