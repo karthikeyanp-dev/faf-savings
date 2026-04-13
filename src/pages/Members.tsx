@@ -1,14 +1,20 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatINR, getCurrentFY, calculateMemberNet, calculateFYTarget } from '@/utils/financialYear';
-import type { MemberDoc, TransactionDoc } from '@/types';
+import {
+  formatINR,
+  getCurrentFY,
+  calculateMemberNet,
+  calculateFYTarget,
+  getOpeningBalance,
+} from '@/utils/financialYear';
+import type { AppConfig, MemberDoc, TransactionDoc } from '@/types';
 import { Search, Filter, X, ChevronRight } from 'lucide-react';
 import { StaggerContainer, StaggerItem } from '@/components/animations/PageTransition';
 import { Input } from '@/components/ui/input';
@@ -134,8 +140,17 @@ export function MembersPage() {
     },
   });
 
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, 'config', 'app'));
+      return snap.data() as AppConfig;
+    },
+  });
+
   const activeTransactions = transactions.filter((t) => t.status === 'active');
   const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
+  const openingBalances = config?.openingBalances;
 
   // Filter members
   const filteredMembers = members
@@ -225,7 +240,8 @@ export function MembersPage() {
           {filteredMembers.map((member) => {
             const net = calculateMemberNet(
               activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-              member.id
+              member.id,
+              getOpeningBalance(openingBalances, member.id)
             );
             const receivable = Math.max(0, -net);
             const memberFyDeposited = fyTransactions
@@ -266,7 +282,8 @@ export function MembersPage() {
                 {filteredMembers.map((member) => {
                   const net = calculateMemberNet(
                     activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-                    member.id
+                    member.id,
+                    getOpeningBalance(openingBalances, member.id)
                   );
                   const receivable = Math.max(0, -net);
                   const memberFyDeposited = fyTransactions

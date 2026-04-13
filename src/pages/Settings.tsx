@@ -31,8 +31,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectItem } from "@/components/ui/select";
-import { formatINR, getCurrentFY } from "@/utils/financialYear";
-import type { MemberDoc, TransactionDoc, UserDoc, AppConfig } from "@/types";
+import {
+  formatINR,
+  getCurrentFY,
+  getTotalOpeningBalance,
+} from "@/utils/financialYear";
+import type { MemberDoc, UserDoc, AppConfig } from "@/types";
 import { toast } from "sonner";
 
 import {
@@ -211,31 +215,12 @@ export function SettingsPage() {
     },
   });
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ["transactions"],
-    queryFn: async () => {
-      const snap = await getDocs(collection(db, "transactions"));
-      return snap.docs.map(
-        (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
-      );
-    },
-  });
-
   const openingBalances = members.map((m) => {
-    const amount = transactions
-      .filter(
-        (t) =>
-          t.status === "active" &&
-          t.memberId === m.id &&
-          t.type === "opening_balance",
-      )
-      .reduce((sum, t) => sum + t.amount, 0);
+    const amount = config?.openingBalances?.[m.id] ?? 0;
     return { member: m, amount };
   });
-  const totalOpeningBalance = openingBalances.reduce(
-    (sum, ob) => sum + ob.amount,
-    0,
-  );
+  const totalOpeningBalance = getTotalOpeningBalance(config?.openingBalances);
+  const openingInterest = config?.openingInterest ?? 0;
 
   const handleUpdatePaymentDetails = async (
     e: React.FormEvent<HTMLFormElement>,
@@ -661,6 +646,18 @@ export function SettingsPage() {
                     </div>
                     <p className="text-lg font-bold">
                       {formatINR(totalOpeningBalance)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium">Opening Interest</p>
+                      <p className="text-xs text-muted-foreground">
+                        Added directly to pool balance
+                      </p>
+                    </div>
+                    <p className="text-lg font-bold">
+                      {formatINR(openingInterest)}
                     </p>
                   </div>
 

@@ -24,31 +24,49 @@ export interface LightweightTransaction {
   status: 'active' | 'void';
 }
 
-export function calculatePoolBalance(transactions: LightweightTransaction[]): number {
+export function calculatePoolBalance(
+  transactions: LightweightTransaction[],
+  openingBalanceTotal = 0,
+  openingInterest = 0
+): number {
   return transactions
     .filter(t => t.status === 'active')
     .reduce((sum, t) => {
-      if (t.type === 'deposit' || t.type === 'return' || t.type === 'opening_balance' || t.type === 'interest') {
+      if (t.type === 'deposit' || t.type === 'return' || t.type === 'interest') {
         return sum + t.amount;
       }
       if (t.type === 'withdrawal') {
         return sum - t.amount;
       }
       return sum;
-    }, 0);
+    }, openingBalanceTotal + openingInterest);
 }
 
 export function calculateMemberNet(
   transactions: Array<LightweightTransaction & { memberId: string }>,
-  memberId: string
+  memberId: string,
+  openingBalance = 0
 ): number {
   return transactions
     .filter(t => t.status === 'active' && t.memberId === memberId)
     .reduce((sum, t) => {
-      if (t.type === 'deposit' || t.type === 'return' || t.type === 'opening_balance') return sum + t.amount;
+      if (t.type === 'deposit' || t.type === 'return') return sum + t.amount;
       if (t.type === 'withdrawal') return sum - t.amount;
       return sum;
-    }, 0);
+    }, openingBalance);
+}
+
+export function getOpeningBalance(
+  openingBalances: Record<string, number> | undefined,
+  memberId: string
+): number {
+  return openingBalances?.[memberId] ?? 0;
+}
+
+export function getTotalOpeningBalance(
+  openingBalances: Record<string, number> | undefined
+): number {
+  return Object.values(openingBalances ?? {}).reduce((sum, amount) => sum + amount, 0);
 }
 
 export function formatINR(amount: number): string {

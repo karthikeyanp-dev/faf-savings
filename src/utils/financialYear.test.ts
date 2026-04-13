@@ -54,12 +54,11 @@ describe('calculatePoolBalance', () => {
     expect(calculatePoolBalance([])).toBe(0);
   });
 
-  it('handles opening_balance type', () => {
+  it('handles configured opening balances', () => {
     const txs: LightweightTransaction[] = [
-      { type: 'opening_balance', amount: 5000, status: 'active' },
       { type: 'deposit', amount: 1000, status: 'active' },
     ];
-    expect(calculatePoolBalance(txs)).toBe(6000);
+    expect(calculatePoolBalance(txs, 5000)).toBe(6000);
   });
 
   it('excludes void transactions', () => {
@@ -78,7 +77,7 @@ describe('calculateMemberNet', () => {
       { type: 'withdrawal', amount: 300, status: 'active', memberId: 'member1' },
       { type: 'deposit', amount: 2000, status: 'active', memberId: 'member2' },
     ];
-    expect(calculateMemberNet(txs, 'member1')).toBe(700);
+    expect(calculateMemberNet(txs, 'member1', 500)).toBe(1200);
     expect(calculateMemberNet(txs, 'member2')).toBe(2000);
   });
 

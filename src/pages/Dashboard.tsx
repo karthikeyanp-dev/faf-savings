@@ -16,10 +16,13 @@ import { Badge } from "@/components/ui/badge";
 import {
   formatINR,
   getCurrentFY,
+  calculatePoolBalance,
   calculateMemberNet,
   calculateFYTarget,
+  getOpeningBalance,
+  getTotalOpeningBalance,
 } from "@/utils/financialYear";
-import type { MemberDoc, TransactionDoc, StatsCurrent } from "@/types";
+import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
 import { Wallet, Landmark, ArrowDownRight, CalendarCheck, TrendingUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -173,11 +176,11 @@ export function DashboardPage() {
   const currentFY = getCurrentFY();
   const fyTarget = calculateFYTarget(currentFY);
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["stats"],
+  const { data: config, isLoading: configLoading } = useQuery({
+    queryKey: ["config"],
     queryFn: async () => {
-      const snap = await getDoc(doc(db, "stats", "current"));
-      return snap.data() as StatsCurrent;
+      const snap = await getDoc(doc(db, "config", "app"));
+      return snap.data() as AppConfig;
     },
   });
 
@@ -199,7 +202,7 @@ export function DashboardPage() {
     },
   });
 
-  if (statsLoading || membersLoading) {
+  if (configLoading || membersLoading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -211,10 +214,17 @@ export function DashboardPage() {
 
   const activeTransactions = transactions.filter((t) => t.status === "active");
   const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
+  const openingBalances = config?.openingBalances;
+  const totalOpeningBalance = getTotalOpeningBalance(openingBalances);
+  const openingInterest = config?.openingInterest ?? 0;
+  const availableBalance = calculatePoolBalance(
+    activeTransactions,
+    totalOpeningBalance,
+    openingInterest,
+  );
 
-  const totalDeposited = stats?.totalDeposit || 0;
-  const totalOpeningBalance = activeTransactions
-    .filter((t) => t.type === "opening_balance")
+  const totalDeposited = activeTransactions
+    .filter((t) => t.type === "deposit")
     .reduce((sum, t) => sum + t.amount, 0);
   const totalInterest = activeTransactions
     .filter((t) => t.type === "interest")
@@ -223,6 +233,7 @@ export function DashboardPage() {
     const net = calculateMemberNet(
       activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
       member.id,
+      getOpeningBalance(openingBalances, member.id),
     );
     return sum + Math.max(0, -net);
   }, 0);
@@ -293,7 +304,7 @@ export function DashboardPage() {
                     Available Balance
                   </p>
                   <p className="text-3xl sm:text-4xl font-extrabold mt-2 text-white tracking-tight">
-                    {formatINR(stats?.poolBalance || 0)}
+                    {formatINR(availableBalance)}
                   </p>
                   <p className="text-white/50 text-xs mt-2">
                     Pool funds ready for use
@@ -344,14 +355,10 @@ export function DashboardPage() {
               const net = calculateMemberNet(
                 activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
                 member.id,
+                getOpeningBalance(openingBalances, member.id),
               );
               const receivable = Math.max(0, -net);
-              const memberOb = activeTransactions
-                .filter(
-                  (t) =>
-                    t.memberId === member.id && t.type === "opening_balance",
-                )
-                .reduce((sum, t) => sum + t.amount, 0);
+              const memberOb = getOpeningBalance(openingBalances, member.id);
               const memberFyDeposited = fyTransactions
                 .filter((t) => t.memberId === member.id && t.type === "deposit")
                 .reduce((sum, t) => sum + t.amount, 0);
@@ -395,15 +402,10 @@ export function DashboardPage() {
                         memberId: t.memberId,
                       })),
                       member.id,
+                      getOpeningBalance(openingBalances, member.id),
                     );
                     const receivable = Math.max(0, -net);
-                    const memberOb = activeTransactions
-                      .filter(
-                        (t) =>
-                          t.memberId === member.id &&
-                          t.type === "opening_balance",
-                      )
-                      .reduce((sum, t) => sum + t.amount, 0);
+                    const memberOb = getOpeningBalance(openingBalances, member.id);
                     const memberFyDeposited = fyTransactions
                       .filter(
                         (t) => t.memberId === member.id && t.type === "deposit",

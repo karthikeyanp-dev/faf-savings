@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,8 +10,9 @@ import {
   calculateMemberNet,
   calculateFYTarget,
   formatDate,
+  getOpeningBalance,
 } from "@/utils/financialYear";
-import type { MemberDoc, TransactionDoc } from "@/types";
+import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -131,7 +132,15 @@ export function MemberDetailPage() {
     },
   });
 
-  if (membersLoading || transactionsLoading) {
+  const { data: config, isLoading: configLoading } = useQuery({
+    queryKey: ["config"],
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, "config", "app"));
+      return snap.data() as AppConfig;
+    },
+  });
+
+  if (membersLoading || transactionsLoading || configLoading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -160,15 +169,15 @@ export function MemberDetailPage() {
 
   const activeTransactions = transactions.filter((t) => t.status === "active");
   const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
+  const openingBalances = config?.openingBalances;
+  const openingBalance = getOpeningBalance(openingBalances, member.id);
 
   const net = calculateMemberNet(
     activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
     member.id,
+    openingBalance,
   );
   const receivable = Math.max(0, -net);
-  const openingBalance = activeTransactions
-    .filter((t) => t.memberId === member.id && t.type === "opening_balance")
-    .reduce((sum, t) => sum + t.amount, 0);
   const totalDeposit = activeTransactions
     .filter((t) => t.memberId === member.id && t.type === "deposit")
     .reduce((sum, t) => sum + t.amount, 0);
@@ -188,7 +197,7 @@ export function MemberDetailPage() {
 
   // All transactions for this member, sorted by date descending
   const memberTransactions = transactions
-    .filter((t) => t.memberId === member.id)
+    .filter((t) => t.memberId === member.id && t.type !== "opening_balance")
     .sort((a, b) => b.date.toMillis() - a.date.toMillis());
 
   return (

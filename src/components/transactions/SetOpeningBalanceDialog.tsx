@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { setOpeningBalances } from "@/lib/transactions";
 import { useAuth } from "@/providers/AuthProvider";
 import {
   Dialog,
@@ -14,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { MemberDoc, TransactionDoc } from "@/types";
+import type { AppConfig, MemberDoc } from "@/types";
 import { toast } from "sonner";
 import { getCurrentFY } from "@/utils/financialYear";
 
@@ -147,6 +153,15 @@ export function SetOpeningBalanceDialog({
   const currentFY = getCurrentFY();
   const fyStartDate = getFYStartDate(currentFY);
 
+  const { data: config } = useQuery({
+    queryKey: ["config"],
+    queryFn: async () => {
+      const snap = await getDoc(doc(db, "config", "app"));
+      return snap.data() as AppConfig;
+    },
+    enabled: open,
+  });
+
   const { data: members = [] } = useQuery({
     queryKey: ["members"],
     queryFn: async () => {
@@ -156,29 +171,29 @@ export function SetOpeningBalanceDialog({
     enabled: open,
   });
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ["transactions"],
-    queryFn: async () => {
-      const snap = await getDocs(collection(db, "transactions"));
-      return snap.docs.map(
-        (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
-      );
-    },
-    enabled: open,
-  });
-
   const existingBalances: Record<string, number> = {};
-  const activeTransactions = transactions.filter((t) => t.status === "active");
   for (const member of members) {
-    const ob = activeTransactions
-      .filter((t) => t.memberId === member.id && t.type === "opening_balance")
-      .reduce((sum, t) => sum + t.amount, 0);
-    existingBalances[member.id] = ob;
+    existingBalances[member.id] = config?.openingBalances?.[member.id] ?? 0;
   }
-  
-  const existingInterest = activeTransactions
-    .filter((t) => t.type === "interest" && t.notes === `Opening interest for FY ${currentFY}`)
-    .reduce((sum, t) => sum + t.amount, 0);
+  const existingInterest = config?.openingInterest ?? 0;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const nextAmounts = members.reduce(
+      (acc, member) => {
+        const amount = existingBalances[member.id];
+        acc[member.id] = amount !== 0 ? String(amount) : "";
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+
+    setAmounts(nextAmounts);
+    setInterestAmount(existingInterest !== 0 ? String(existingInterest) : "");
+  }, [open, members, config, existingInterest]);
 
   const handleAmountChange = (memberId: string, value: string) => {
     setAmounts((prev) => ({ ...prev, [memberId]: value }));
@@ -189,39 +204,36 @@ export function SetOpeningBalanceDialog({
   };
 
   const submitBalances = async () => {
-    const entries = members
-      .map((m) => ({
-        memberId: m.id,
-        name: m.name,
-        amount: parseFloat(amounts[m.id] || "0") || 0,
-      }))
-      .filter((e) => e.amount !== 0);
-
-    const interest = parseFloat(interestAmount || "0") || 0;
-
-    if (entries.length === 0 && interest === 0) {
-      toast.error("Please enter at least one opening balance or interest amount");
-      return;
-    }
+    const openingBalances = members.reduce(
+      (acc, member) => {
+        const parsedAmount = Number.parseFloat(amounts[member.id] ?? "");
+        acc[member.id] = Number.isFinite(parsedAmount) ? parsedAmount : 0;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+    const parsedInterest = Number.parseFloat(interestAmount ?? "");
+    const openingInterest = Number.isFinite(parsedInterest) ? parsedInterest : 0;
 
     setIsSubmitting(true);
 
     try {
-      const fy = currentFY;
-      const result = await setOpeningBalances({
-        entries,
-        openingInterest: interest || undefined,
-        date: fyStartDate,
-        fy,
-        createdByUid: user!.uid,
-      });
-
-      toast.success(
-        `Opening balances updated for ${result.createdCount} member${result.createdCount !== 1 ? "s" : ""}`,
+      await setDoc(
+        doc(db, "config", "app"),
+        {
+          openingBalances,
+          openingInterest,
+          openingBalanceDate: fyStartDate.toISOString(),
+          openingBalanceFY: currentFY,
+          updatedAt: serverTimestamp(),
+          updatedByUid: user!.uid,
+        },
+        { merge: true },
       );
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
+
+      toast.success("Opening balances saved");
       resetForm();
+      queryClient.invalidateQueries({ queryKey: ["config"] });
       onClose();
     } catch (error: any) {
       toast.error(error.message || "Failed to set opening balances");

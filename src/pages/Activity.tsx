@@ -184,13 +184,18 @@ export function ActivityPage() {
     },
   });
 
-  const fys = useMemo(() => 
-    Array.from(new Set(transactions.map((t) => t.fy))).sort().reverse(),
+  const visibleTransactions = useMemo(
+    () => transactions.filter((t) => t.type !== 'opening_balance'),
     [transactions]
   );
 
+  const fys = useMemo(() => 
+    Array.from(new Set(visibleTransactions.map((t) => t.fy))).sort().reverse(),
+    [visibleTransactions]
+  );
+
   const filtered = useMemo(() => {
-    return transactions
+    return visibleTransactions
       .filter((t) => fyFilter === 'all' || t.fy === fyFilter)
       .filter((t) => memberFilter === 'all' || t.memberId === memberFilter)
       .filter((t) => typeFilter === 'all' || t.type === typeFilter)
@@ -205,7 +210,7 @@ export function ActivityPage() {
         );
       })
       .sort((a, b) => b.date.toMillis() - a.date.toMillis());
-  }, [transactions, fyFilter, memberFilter, typeFilter, searchQuery, members]);
+  }, [visibleTransactions, fyFilter, memberFilter, typeFilter, searchQuery, members]);
 
   const getMemberName = (memberId: string) => {
     return members.find((m) => m.id === memberId)?.name || 'Unknown';

@@ -45,6 +45,10 @@ export interface AppConfig {
   upiId?: string;
   bankDetails?: string;
   qrUrl?: string;
+  openingBalances?: Record<string, number>;
+  openingInterest?: number;
+  openingBalanceFY?: string;
+  openingBalanceDate?: string;
   updatedAt: Timestamp;
   updatedByUid: string;
 }
