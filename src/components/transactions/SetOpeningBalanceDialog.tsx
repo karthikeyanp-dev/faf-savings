@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -14,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FullScreenDrawer } from "@/components/ui/bottom-sheet";
 import type { MemberDoc, TransactionDoc } from "@/types";
 import { toast } from "sonner";
 import { getCurrentFY } from "@/utils/financialYear";
@@ -32,9 +31,7 @@ function OpeningBalanceFormContent({
   interestAmount,
   onAmountChange,
   onInterestChange,
-  isSubmitting,
   onSubmit,
-  onCancel,
   fy,
 }: {
   members: MemberDoc[];
@@ -44,9 +41,7 @@ function OpeningBalanceFormContent({
   interestAmount: string;
   onAmountChange: (memberId: string, value: string) => void;
   onInterestChange: (value: string) => void;
-  isSubmitting: boolean;
   onSubmit: (e: React.FormEvent) => void;
-  onCancel: () => void;
   fy: string;
 }) {
   const totalNew = Object.values(amounts).reduce(
@@ -132,15 +127,6 @@ function OpeningBalanceFormContent({
           </div>
         ))}
       </div>
-
-      <div className="hidden lg:flex gap-2 justify-end pt-4">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Saving..." : "Save Opening Balances"}
-        </Button>
-      </div>
     </form>
   );
 }
@@ -154,20 +140,12 @@ export function SetOpeningBalanceDialog({
 }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [isMobile, setIsMobile] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [interestAmount, setInterestAmount] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentFY = getCurrentFY();
   const fyStartDate = getFYStartDate(currentFY);
-
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
 
   const { data: members = [] } = useQuery({
     queryKey: ["members"],
@@ -210,8 +188,7 @@ export function SetOpeningBalanceDialog({
     setInterestAmount(value);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitBalances = async () => {
     const entries = members
       .map((m) => ({
         memberId: m.id,
@@ -244,8 +221,7 @@ export function SetOpeningBalanceDialog({
       );
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
-      setAmounts({});
-      setInterestAmount("");
+      resetForm();
       onClose();
     } catch (error: any) {
       toast.error(error.message || "Failed to set opening balances");
@@ -254,48 +230,31 @@ export function SetOpeningBalanceDialog({
     }
   };
 
-  const handleClose = () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitBalances();
+  };
+
+  const resetForm = () => {
     setAmounts({});
     setInterestAmount("");
+  };
+
+  const handleCancel = () => {
+    resetForm();
     onClose();
   };
 
-  if (isMobile) {
-    return (
-      <FullScreenDrawer
-        open={open}
-        onOpenChange={handleClose}
-        title="Opening Balances"
-        onSave={() => handleSubmit(new Event("submit") as any)}
-        saveLabel={isSubmitting ? "Saving..." : "Save"}
-      >
-        <OpeningBalanceFormContent
-          members={members}
-          existingBalances={existingBalances}
-          existingInterest={existingInterest}
-          amounts={amounts}
-          interestAmount={interestAmount}
-          onAmountChange={handleAmountChange}
-          onInterestChange={handleInterestChange}
-          isSubmitting={isSubmitting}
-          onSubmit={handleSubmit}
-          onCancel={handleClose}
-          fy={currentFY}
-        />
-      </FullScreenDrawer>
-    );
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-lg max-h-[min(90vh,48rem)] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Set Opening Balances</DialogTitle>
           <DialogDescription>
             Enter each member's accumulated balance from before FY {currentFY}
           </DialogDescription>
         </DialogHeader>
-        <div className="px-6 pb-6">
+        <div className="max-h-[calc(min(90vh,48rem)-8.5rem)] overflow-y-auto px-4 pb-4 sm:px-6 sm:pb-6">
           <OpeningBalanceFormContent
             members={members}
             existingBalances={existingBalances}
@@ -304,11 +263,28 @@ export function SetOpeningBalanceDialog({
             interestAmount={interestAmount}
             onAmountChange={handleAmountChange}
             onInterestChange={handleInterestChange}
-            isSubmitting={isSubmitting}
             onSubmit={handleSubmit}
-            onCancel={handleClose}
             fy={currentFY}
           />
+        </div>
+        <div className="flex gap-2 border-t border-border px-4 py-4 sm:px-6">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCancel}
+            className="flex-1"
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={submitBalances}
+            className="flex-1"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Saving..." : "Save Opening Balances"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
