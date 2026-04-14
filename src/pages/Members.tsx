@@ -29,6 +29,7 @@ function MemberCard({
   net,
   receivable,
   fyDeposited,
+  fyWithdrawn,
   fyTarget,
   onClick,
 }: {
@@ -36,6 +37,7 @@ function MemberCard({
   net: number;
   receivable: number;
   fyDeposited: number;
+  fyWithdrawn: number;
   fyTarget: number;
   onClick: () => void;
 }) {
@@ -49,7 +51,7 @@ function MemberCard({
       className="w-full cursor-pointer"
       onClick={onClick}
     >
-      <Card>
+      <Card className="bg-muted/30 hover:bg-muted/50 transition-colors">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -60,10 +62,9 @@ function MemberCard({
                 {member.name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <p className="font-semibold">{member.name}</p>
-                <Badge variant={member.active ? 'default' : 'secondary'} className="text-[10px]">
-                  {member.active ? 'Active' : 'Inactive'}
-                </Badge>
+                <p className="font-semibold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+                  {member.name}
+                </p>
               </div>
             </div>
             <ChevronRight className="h-5 w-5 text-muted-foreground" />
@@ -79,7 +80,7 @@ function MemberCard({
               </p>
               <p className="text-xs text-muted-foreground">Balance</p>
             </div>
-            <div>
+            <div className="text-right">
               <p className="text-lg font-bold">{formatINR(receivable)}</p>
               <p className="text-xs text-muted-foreground">Outstanding</p>
             </div>
@@ -87,19 +88,15 @@ function MemberCard({
               <p className="text-lg font-bold">{formatINR(fyDeposited)}</p>
               <p className="text-xs text-muted-foreground">FY Deposited</p>
             </div>
-            <div>
-              <p className="text-lg font-bold">{formatINR(fyTarget)}</p>
-              <p className="text-xs text-muted-foreground">FY Target</p>
+            <div className="text-right">
+              <p className="text-lg font-bold">{formatINR(fyWithdrawn)}</p>
+              <p className="text-xs text-muted-foreground">FY Withdrawn</p>
             </div>
           </div>
 
           {/* Full-width FY Progress */}
           <div className="mt-3">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-muted-foreground">FY Progress</p>
-              <p className="text-xs font-medium">{formatINR(fyDeposited)} / {formatINR(fyTarget)}</p>
-            </div>
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
               <div
                 className={cn(
                   'h-full rounded-full transition-all duration-500',
@@ -107,6 +104,10 @@ function MemberCard({
                 )}
                 style={{ width: `${progressPct}%` }}
               />
+            </div>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-muted-foreground">FY Progress</p>
+              <p className="text-xs text-muted-foreground">{formatINR(fyDeposited)} / {formatINR(fyTarget)}</p>
             </div>
           </div>
         </CardContent>
@@ -247,6 +248,9 @@ export function MembersPage() {
             const memberFyDeposited = fyTransactions
               .filter((t) => t.memberId === member.id && t.type === 'deposit')
               .reduce((sum, t) => sum + t.amount, 0);
+            const memberFyWithdrawn = fyTransactions
+              .filter((t) => t.memberId === member.id && t.type === 'withdrawal')
+              .reduce((sum, t) => sum + t.amount, 0);
 
             return (
               <StaggerItem key={member.id}>
@@ -255,6 +259,7 @@ export function MembersPage() {
                   net={net}
                   receivable={receivable}
                   fyDeposited={memberFyDeposited}
+                  fyWithdrawn={memberFyWithdrawn}
                   fyTarget={fyTarget}
                   onClick={() => navigate(`/members/${member.id}`)}
                 />
@@ -297,7 +302,11 @@ export function MembersPage() {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => navigate(`/members/${member.id}`)}
                     >
-                      <TableCell className="font-medium">{member.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+                          {member.name}
+                        </span>
+                      </TableCell>
                       <TableCell
                         className={cn(
                           'text-right font-semibold',

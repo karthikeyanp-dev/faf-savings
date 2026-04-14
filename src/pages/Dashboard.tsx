@@ -162,14 +162,12 @@ function MemberCard({
   receivable,
   fyDeposited,
   fyTarget,
-  openingBalance,
 }: {
   member: MemberDoc;
   net: number;
   receivable: number;
   fyDeposited: number;
   fyTarget: number;
-  openingBalance: number;
 }) {
   const progressPct =
     fyTarget > 0
@@ -192,12 +190,6 @@ function MemberCard({
           </div>
           <div>
             <p className="font-semibold">{member.name}</p>
-            <Badge
-              variant={member.active ? "default" : "secondary"}
-              className="text-[10px]"
-            >
-              {member.active ? "Active" : "Inactive"}
-            </Badge>
           </div>
         </div>
 
@@ -215,29 +207,16 @@ function MemberCard({
             </p>
             <p className="text-xs text-muted-foreground">Balance</p>
           </div>
-          <div>
+          <div className="text-right">
             <p className="text-lg font-bold">{formatINR(receivable)}</p>
             <p className="text-xs text-muted-foreground">Outstanding</p>
-          </div>
-          <div>
-            <p className="text-lg font-bold">{formatINR(openingBalance)}</p>
-            <p className="text-xs text-muted-foreground">Previous Bal</p>
-          </div>
-          <div>
-            <p className="text-lg font-bold">{formatINR(fyDeposited)}</p>
-            <p className="text-xs text-muted-foreground">FY Deposited</p>
           </div>
         </div>
 
         {/* Full-width FY Progress */}
         <div className="mt-3">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-muted-foreground">FY Progress</p>
-            <p className="text-xs font-medium">
-              {formatINR(fyDeposited)} / {formatINR(fyTarget)}
-            </p>
-          </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
+          
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-500",
@@ -249,6 +228,12 @@ function MemberCard({
               )}
               style={{ width: `${progressPct}%` }}
             />
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-muted-foreground">FY Progress</p>
+            <p className="text-xs text-muted-foreground">
+              {formatINR(fyDeposited)} / {formatINR(fyTarget)}
+            </p>
           </div>
         </div>
       </CardContent>
@@ -332,6 +317,17 @@ export function DashboardPage() {
     .reduce((sum, t) => sum + t.amount, 0);
   const totalInterestsEarned = totalInterest + openingInterest;
 
+  const totalPoolFunds = totalDepositsAllTime + totalInterestsEarned;
+  const availablePercentage =
+    totalPoolFunds > 0
+      ? Math.round((availableBalance / totalPoolFunds) * 100)
+      : 0;
+
+  const interestPercentage =
+    totalDepositsAllTime > 0
+      ? Number(((totalInterestsEarned / totalDepositsAllTime) * 100).toFixed(1))
+      : 0;
+
   const summaryCards = [
     {
       title: "Total Deposited",
@@ -351,7 +347,7 @@ export function DashboardPage() {
       title: "Total Interests Earned",
       value: formatINR(totalInterestsEarned),
       icon: TrendingUp,
-      subtitle: "Opening + current FY interests",
+      subtitle: `${interestPercentage}% of total deposited`,
       iconBg: "bg-amber-500",
     },
   ];
@@ -375,8 +371,8 @@ export function DashboardPage() {
                   <p className="text-3xl sm:text-4xl font-extrabold mt-2 text-white tracking-tight">
                     {formatINR(availableBalance)}
                   </p>
-                  <p className="text-white/50 text-xs mt-2">
-                    Pool funds ready for use
+                  <p className="text-white/50 text-xs mt-2 font-medium">
+                    {availablePercentage}% of Total Funds
                   </p>
                 </div>
                 <div className="p-3.5 bg-white/15 rounded-2xl backdrop-blur-sm">
@@ -437,7 +433,6 @@ export function DashboardPage() {
                 getOpeningBalance(openingBalances, member.id),
               );
               const receivable = Math.max(0, -net);
-              const memberOb = getOpeningBalance(openingBalances, member.id);
               const memberFyDeposited = fyTransactions
                 .filter((t) => t.memberId === member.id && t.type === "deposit")
                 .reduce((sum, t) => sum + t.amount, 0);
@@ -450,7 +445,6 @@ export function DashboardPage() {
                     receivable={receivable}
                     fyDeposited={memberFyDeposited}
                     fyTarget={fyTarget}
-                    openingBalance={memberOb}
                   />
                 </StaggerItem>
               );

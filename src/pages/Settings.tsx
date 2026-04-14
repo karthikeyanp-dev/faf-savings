@@ -128,24 +128,18 @@ function MemberCard({
                 <PowerOff className="h-5 w-5" />
               )}
             </div>
-            <div>
-              <p className="font-semibold">{member.name}</p>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold truncate">{member.name}</p>
               {member.email && (
-                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                  <Mail className="h-3 w-3" />
-                  {member.email}
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0 hidden sm:flex">
+                  <Mail className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{member.email}</span>
                 </p>
               )}
-              <Badge
-                variant={member.active ? "default" : "secondary"}
-                className="text-[10px] mt-0.5"
-              >
-                {member.active ? "Active" : "Inactive"}
-              </Badge>
             </div>
           </div>
           {isMaintainer && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <TapScale scale={0.95}>
                 <Button
                   variant="ghost"
