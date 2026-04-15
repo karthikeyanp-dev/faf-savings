@@ -35,7 +35,15 @@ export default defineConfig({
             purpose: 'maskable'
           }
         ]
-      }
+      },
+      workbox: {
+        // Import our notification script into the generated service worker
+        importScripts: [
+          'https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js',
+          'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore-compat.js',
+          '/sw-notifications.js',
+        ],
+      },
     })
   ],
   resolve: {
