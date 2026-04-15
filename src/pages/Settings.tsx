@@ -129,7 +129,15 @@ function MemberCard({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-semibold truncate">{member.name}</p>
+              <div className="flex items-center gap-2">
+                <p className="font-semibold truncate">{member.name}</p>
+                <Badge
+                  variant={member.active ? "default" : "secondary"}
+                  className="text-[10px] shrink-0"
+                >
+                  {member.active ? "Active" : "Inactive"}
+                </Badge>
+              </div>
               {member.email && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0 hidden sm:flex">
                   <Mail className="h-3 w-3 shrink-0" />
