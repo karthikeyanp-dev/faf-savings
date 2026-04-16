@@ -7,22 +7,24 @@ A production-ready private web app for managing a shared emergency savings pool 
 ## Features
 
 - **Role-based access**: Maintainer (full access) and Viewer (read-only)
-- **Transaction management**: Deposit, Withdrawal, Return, and Opening Balance
+- **Transaction management**: Deposit, Withdrawal, Return, Interest, and Opening Balance
+- **Opening balance configuration**: Set accumulated pre-FY balances for each member with optional opening interest
 - **Pool balance enforcement**: Firestore Security Rules + client-side transactions ensure balance never goes negative
 - **Financial Year tracking**: April-March fiscal year with automatic FY labeling
-- **Real-time dashboard**: Pool balance, member balances, receivables
+- **Real-time dashboard**: Pool balance, member balances, receivables, FY stats (deposited, withdrawn, interests)
 - **Activity ledger**: Filterable, searchable transaction history
-- **Member management**: Add, deactivate, view detailed transaction history
-- **Settings**: Payment details, QR code (base64), maintainer handover
+- **Member management**: Add, edit, deactivate/activate, view detailed transaction history per member
+- **Settings**: Payment details (UPI, bank), QR code upload (base64), maintainer handover, opening balance configuration
 - **Dark mode**: Toggle between light and dark themes
 - **Excel import**: Script to import member data and opening balances
+- **PWA support**: Progressive Web App with offline capabilities
 
 ## Tech Stack
 
-- **Frontend**: React 18, Vite, TypeScript, shadcn/ui, Tailwind CSS
-- **State Management**: TanStack Query
+- **Frontend**: React 18, Vite, TypeScript, shadcn/ui, Tailwind CSS, Framer Motion
+- **State Management**: TanStack Query (React Query)
 - **Forms**: React Hook Form + Zod validation
-- **Backend**: Firebase (Auth, Firestore)
+- **Backend**: Firebase (Authentication, Firestore) - **No Cloud Functions required**
 - **Routing**: React Router v7
 - **Testing**: Vitest
 
@@ -45,6 +47,7 @@ npm install
 1. Create a new Firebase project at [Firebase Console](https://console.firebase.google.com/)
 2. Enable **Authentication** (Email/Password sign-in method)
 3. Enable **Firestore Database** (start in production mode)
+4. Copy your Firebase config from Project Settings > General > Your apps > Web app
 
 **Note**: No need for Cloud Functions or Storage - this app uses pure client-side transactions!
 
@@ -54,9 +57,9 @@ npm install
 cp .env.example .env
 ```
 
-Fill in your Firebase config from Project Settings > General > Your apps > Web app.
+Edit `.env` and fill in your Firebase configuration values.
 
-### 4. Deploy Firebase Rules
+### 4. Deploy Firestore Rules
 
 ```bash
 # Login to Firebase
@@ -72,6 +75,9 @@ firebase deploy --only firestore:rules,firestore:indexes
 ### 5. Seed Initial Data
 
 ```bash
+# Install firebase-admin temporarily for the seed script
+npm install -D firebase-admin
+
 # Set your project ID
 export FIREBASE_PROJECT_ID=your-project-id
 
@@ -80,17 +86,13 @@ npm run seed
 ```
 
 This creates:
+
 - Maintainer account: `maintainer@faf.local` / `Maintainer123!`
 - Viewer account: `viewer@faf.local` / `Viewer123!`
 - 5 placeholder members
 - App config and stats documents
 
 **⚠️ Change these passwords immediately after first login!**
-
-**Note**: The seed script requires `firebase-admin`. Install it temporarily:
-```bash
-npm install -D firebase-admin
-```
 
 ### 6. Start Development Server
 
@@ -102,32 +104,30 @@ The app will be available at `http://localhost:5173`
 
 ## Deployment
 
-### Firebase Hosting
+### Firebase Hosting (Recommended)
 
 ```bash
 # Build the app
 npm run build
 
-# Deploy to Firebase Hosting
-firebase deploy --only hosting
-```
-
-### Full Deployment
-
-```bash
+# Deploy to Firebase Hosting + Firestore rules/indexes
 firebase deploy
 ```
 
 This deploys:
-- Firestore rules and indexes
-- Hosting
 
-### Alternative: Vercel/Netlify
+- Firestore rules and indexes
+- Hosting (with PWA support)
+
+### Alternative Platforms
 
 Since this is a pure static app, you can also deploy to:
+
 - **Vercel**: `vercel deploy`
 - **Netlify**: `netlify deploy --prod`
 - **GitHub Pages**: Push to `gh-pages` branch
+
+**Note**: Remember to separately deploy Firestore rules using `firebase deploy --only firestore:rules`.
 
 ## Excel Import
 
@@ -142,6 +142,7 @@ npm run import:excel -- path/to/your/excel.xlsx
 ```
 
 The script will:
+
 - Create members from the Excel file
 - Create opening balance transactions for each FY summary
 - Update the stats document
@@ -154,30 +155,25 @@ The script will:
 faf-savings/
 ├── src/
 │   ├── components/
-│   │   ├── ui/              # shadcn/ui components
-│   │   ├── layout/          # App layout, navigation
-│   │   ├── transactions/    # Transaction forms (Add/Edit/Void)
-│   │   ├── members/         # Member-related components
-│   │   └── dashboard/       # Dashboard components
-│   ├── pages/               # Page components
-│   │   ├── Login.tsx
-│   │   ├── Dashboard.tsx
-│   │   ├── Members.tsx
-│   │   ├── Activity.tsx
-│   │   └── Settings.tsx
-│   ├── lib/                 # Firebase config, utilities
-│   ├── providers/           # React context providers
-│   ├── types/               # TypeScript types
+│   │   ├── ui/              # shadcn/ui components (Button, Card, Dialog, etc.)
+│   │   ├── layout/          # AppLayout, BottomNav, MobileHeader, ProtectedRoute
+│   │   ├── transactions/    # Transaction forms (Add/Edit/Void, Member add/edit, Opening Balance)
+│   │   └── animations/      # Page transitions and stagger effects
+│   ├── pages/               # Page components (Dashboard, Members, Activity, Settings, Login)
+│   ├── lib/                 # Firebase config, Firestore queries, utils
+│   ├── providers/           # AuthProvider, QueryProvider
+│   ├── types/               # TypeScript interfaces
 │   ├── schemas/             # Zod validation schemas
-│   ├── utils/               # Helper functions
-│   └── hooks/               # Custom React hooks
-├── functions/               # [REMOVED] Cloud Functions not needed
+│   └── utils/               # Financial year calculations, formatting
 ├── scripts/
-│   ├── seed.ts              # Database seeding
-│   └── importExcel.ts       # Excel import
-├── firestore.rules          # Firestore security rules (includes balance validation)
-├── firestore.indexes.json   # Firestore indexes
-└── firebase.json            # Firebase config (no storage section)
+│   ├── seed.ts              # Database seeding (users, members, config)
+│   ├── importExcel.ts       # Excel import for member/balance data
+│   └── cleanup-transactions.ts  # Transaction cleanup utility
+├── firestore.rules          # Firestore security rules (balance validation)
+├── firestore.indexes.json   # Firestore composite indexes
+├── firebase.json            # Firebase hosting config
+├── vite.config.ts           # Vite config with PWA plugin
+└── tailwind.config.js       # Tailwind CSS configuration
 ```
 
 ## Architecture
@@ -190,14 +186,32 @@ This app uses **Firestore client-side transactions** with **Security Rules** for
 2. **Security Rules** validate that:
    - Only maintainer can create/update transactions
    - New pool balance never goes negative
-   - All amounts are positive
+   - All amounts (except opening_balance) are positive
+   - Void edits only allow status/voidReason/updatedAt fields
 3. **Atomic updates** ensure transaction and stats stay in sync
 
+**Transaction Flow:**
+
+- **Deposit/Return**: Adds amount to pool balance
+- **Withdrawal**: Subtracts amount from pool balance, checks `poolBalance >= amount`
+- **Interest**: Adds amount to pool balance (no member association)
+- **Opening Balance**: Sets initial balances from previous FY (no balance check)
+
 **Benefits:**
+
 - ✅ No Cloud Functions needed (Spark/free plan works)
 - ✅ Simpler deployment
 - ✅ Lower latency (no function cold starts)
 - ✅ Cheaper (free tier sufficient)
+
+### PWA (Progressive Web App)
+
+The app includes PWA capabilities:
+
+- Installable on mobile and desktop
+- Works offline (cached assets)
+- Auto-updates when new version is available
+- Native app-like experience
 
 ## Usage
 
@@ -209,43 +223,52 @@ This app uses **Firestore client-side transactions** with **Security Rules** for
 - **Deposit**: Monthly savings contribution (requires savings month)
 - **Withdrawal**: Taking money from the pool (requires sufficient balance)
 - **Return**: Repaying money to the pool (not linked to specific withdrawal)
-- **Opening Balance**: Initial balance import from Excel
+- **Interest**: Interest earned, added directly to pool balance (no member association)
+- **Opening Balance**: Initial balance import from before current FY (configured in Settings)
+
+### Opening Balances
+
+Use the "Previous Balances" section in Settings to configure each member's accumulated balance from before the current financial year. This allows:
+
+- Accurate member balance calculations from day one
+- Tracking of previous FY contributions separately from current FY
+- Optional "Opening Interest" field for interest already in the pool
+
+Opening balances are recorded as special `opening_balance` transactions dated April 1 of the current FY.
 
 ### Financial Year
 
 FY runs from **April 1 to March 31**.
+
 - Apr-Dec 2025 → `2025-2026`
 - Jan-Mar 2026 → `2025-2026`
 
-### Pool Balance Enforcement
+### Opening Balances
 
-All transaction writes use Firestore `runTransaction()` which:
-1. Reads current stats document
-2. Calculates new balance
-3. Rejects if `newBalance < 0`
-4. Atomically writes both transaction and stats
+Opening balances are set in the Settings page by the maintainer. They represent each member's accumulated balance from before the current financial year. These are stored in the `config` document as `openingBalances` (a map of member IDs to amounts) plus an optional `openingInterest` amount.
 
-Firestore Security Rules provide an additional layer of validation:
-```javascript
-allow create: if isMaintainer() && 
-                 request.resource.data.amount > 0 &&
-                 get(/databases/$(database)/documents/stats/current).data.poolBalance + 
-                 (request.resource.data.type in ['deposit', 'return', 'opening_balance'] 
-                  ? request.resource.data.amount 
-                  : -request.resource.data.amount) >= 0;
+When calculating current balances:
+
+1. Opening balance acts as the starting point for each member
+2. Opening interest is added directly to the pool balance
+3. All active transactions are then applied
+
+**Security Rules behavior:**
+
+- `opening_balance` type transactions bypass pool balance validation (allow negative/zero/positive)
+- These are typically auto-created by the UI when setting opening balances via the Settings page
+
+### Member Net Balance Calculation
+
+```typescript
+memberNet = openingBalance + sum(activeDeposits) - sum(activeWithdrawals);
 ```
 
-## Testing
-
-```bash
-# Run unit tests
-npm test
-
-# Run tests in watch mode
-npm test -- --watch
-```
+- If `memberNet > 0`: Member has excess in pool (pool owes them)
+- If `memberNet < 0`: Member owes money to the pool (outstanding receivable)
 
 Tests cover:
+
 - FY calculation
 - Pool balance aggregation
 - Member net balance calculation
@@ -267,29 +290,30 @@ Modify CSS variables in `src/index.css` to customize the theme colors.
 
 ## Security
 
-- All pages require authentication
-- Firestore rules prevent direct client writes to transactions and stats
-- Cloud Functions enforce role checks and balance validation
-- Storage rules restrict QR uploads to maintainer only
+- All pages require Firebase Authentication
+- Firestore rules prevent unauthorized writes to transactions, stats, and config
+- Security rules enforce maintainer-only access for sensitive operations
+- Balance validation happens both client-side (transactions) and server-side (rules)
+- QR code uploads are base64-encoded directly to Firestore (maintainer only)
 
 ## Troubleshooting
 
 ### "Permission denied" errors
+
 - Ensure Firestore rules are deployed: `firebase deploy --only firestore:rules`
 - Verify the user has the correct role in Firestore `users/{uid}` document
-
-### Cloud Functions not working
-- Check function logs: `firebase functions:log`
-- Ensure functions are deployed: `firebase deploy --only functions`
-- Verify Firebase project is on Blaze plan (required for Cloud Functions)
+- Check browser console for detailed error messages
 
 ### TypeScript errors in scripts
+
 - Install dev dependencies: `npm install -D firebase-admin xlsx @types/xlsx`
 
 ### "Transaction failed" errors
+
 - Check Firestore rules are deployed: `firebase deploy --only firestore:rules`
 - Verify the user has maintainer role in Firestore `users/{uid}` document
 - Check browser console for detailed error messages
+- Ensure pool balance would not go negative after the transaction
 
 ## License
 

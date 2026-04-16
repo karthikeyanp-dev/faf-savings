@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+
 import {
   formatINR,
   getCurrentFY,
@@ -215,7 +215,6 @@ function MemberCard({
 
         {/* Full-width FY Progress */}
         <div className="mt-3">
-          
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div
               className={cn(
@@ -385,7 +384,9 @@ export function DashboardPage() {
 
         {/* Summary Stats */}
         <section>
-          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3`}>
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3`}
+          >
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
