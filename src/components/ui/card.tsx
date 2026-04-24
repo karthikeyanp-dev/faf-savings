@@ -1,130 +1,134 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Card({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
+export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "rounded-xl bg-card text-card-foreground",
+          // Theme-aware visual separation:
+          // Light mode relies on soft shadows for elevation.
+          // Dark mode uses subtle borders and background contrast.
+          "border border-transparent dark:border-border/60",
+          "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+          "transition-all duration-300 ease-out",
+          // Interactive states (mostly visible when the card acts as a button or link, or just subtle hover)
+          "hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.08)] dark:hover:border-border/90",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "active:scale-[0.99]",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+Card.displayName = "Card";
+
+export const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
     <div
-      className={cn(
-        "rounded-2xl bg-card text-card-foreground",
-        "border border-border/50",
-        "shadow-sm shadow-black/5",
-        "transition-all duration-200",
-        "hover:shadow-md hover:shadow-black/5",
-        className,
-      )}
+      ref={ref}
+      className={cn("flex flex-col space-y-1.5 p-6", className)}
       {...props}
     />
-  );
-}
+  )
+);
+CardHeader.displayName = "CardHeader";
 
-export function CardHeader({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn("flex flex-col space-y-1.5 p-5", className)}
-      {...props}
-    />
-  );
-}
-
-export function CardTitle({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) {
-  return (
+export const CardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
+  ({ className, ...props }, ref) => (
     <h3
+      ref={ref}
       className={cn(
-        "text-lg font-semibold leading-none tracking-tight",
-        className,
+        "text-lg font-medium leading-tight tracking-tight text-foreground",
+        className
       )}
       {...props}
     />
-  );
-}
+  )
+);
+CardTitle.displayName = "CardTitle";
 
-export function CardDescription({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLParagraphElement>) {
-  return (
+export const CardDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
+  ({ className, ...props }, ref) => (
     <p
-      className={cn("text-sm text-muted-foreground leading-relaxed", className)}
+      ref={ref}
+      className={cn("text-sm text-muted-foreground/80 leading-relaxed", className)}
       {...props}
     />
-  );
-}
+  )
+);
+CardDescription.displayName = "CardDescription";
 
-export function CardContent({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("p-5 pt-0", className)} {...props} />;
-}
+export const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+  )
+);
+CardContent.displayName = "CardContent";
 
-export function CardFooter({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
+export const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
     <div
-      className={cn("flex items-center gap-2 p-5 pt-0", className)}
+      ref={ref}
+      className={cn("flex items-center gap-3 p-6 pt-0", className)}
       {...props}
     />
-  );
-}
+  )
+);
+CardFooter.displayName = "CardFooter";
 
 // Specialized card variants
-export function GradientCard({
-  className,
-  gradient = "primary",
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & {
-  gradient?: "primary" | "success" | "warning" | "destructive";
-}) {
-  const gradients = {
-    primary: "from-violet-500 to-purple-600",
-    success: "from-emerald-500 to-teal-600",
-    warning: "from-amber-500 to-orange-600",
-    destructive: "from-rose-500 to-pink-600",
-  };
+export const GradientCard = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { gradient?: "primary" | "success" | "warning" | "destructive" }>(
+  ({ className, gradient = "primary", ...props }, ref) => {
+    const gradients = {
+      primary: "from-violet-500/90 to-purple-600/90 hover:from-violet-500 hover:to-purple-600",
+      success: "from-emerald-500/90 to-teal-600/90 hover:from-emerald-500 hover:to-teal-600",
+      warning: "from-amber-500/90 to-orange-600/90 hover:from-amber-500 hover:to-orange-600",
+      destructive: "from-rose-500/90 to-pink-600/90 hover:from-rose-500 hover:to-pink-600",
+    };
 
-  return (
-    <div
-      className={cn(
-        "relative overflow-hidden rounded-2xl text-white",
-        "bg-gradient-to-br",
-        gradients[gradient],
-        "shadow-lg shadow-black/10",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "relative overflow-hidden rounded-xl text-white",
+          "bg-gradient-to-br",
+          gradients[gradient],
+          "shadow-[0_8px_20px_-4px_rgba(0,0,0,0.1)]",
+          "transition-all duration-300",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+GradientCard.displayName = "GradientCard";
 
-export function GlassCard({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        "rounded-2xl",
-        "bg-white/70 dark:bg-white/5",
-        "backdrop-blur-xl",
-        "border border-white/30 dark:border-white/10",
-        "shadow-lg shadow-black/5",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+export const GlassCard = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "rounded-xl",
+          "bg-white/40 dark:bg-white/[0.07]",
+          "backdrop-blur-md",
+          "border border-white/20 dark:border-white/15",
+          "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]",
+          "transition-all duration-300 ease-out",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+GlassCard.displayName = "GlassCard";
 
 export function StatCard({
   className,
@@ -147,30 +151,30 @@ export function StatCard({
     <Card
       className={cn(
         "group cursor-pointer",
-        "hover:border-primary/20",
-        className,
+        className
       )}
       {...props}
     >
-      <CardContent className="p-5">
+      <CardContent className="p-6">
         <div className="flex items-start justify-between">
           <div
             className={cn(
-              "w-11 h-11 rounded-xl flex items-center justify-center",
-              "bg-primary/10 text-primary",
-              "transition-transform duration-200 group-hover:scale-110",
-              iconBg,
+               // Reduced visual noise by making the icon background very subtle
+              "w-10 h-10 rounded-lg flex items-center justify-center",
+              "bg-muted/50 text-muted-foreground",
+              "transition-colors duration-300 group-hover:bg-primary/10 group-hover:text-primary",
+              iconBg
             )}
           >
-            <Icon className="w-5 h-5" />
+            <Icon className="w-4 h-4" />
           </div>
           {trend && (
             <div
               className={cn(
-                "flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full",
+                "flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md",
                 trend.isPositive
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
-                  : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400",
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
               )}
             >
               {trend.isPositive ? "+" : "-"}
@@ -178,13 +182,13 @@ export function StatCard({
             </div>
           )}
         </div>
-        <div className="mt-4">
-          <p className="text-2xl font-bold tracking-tight">{value}</p>
-          <p className="text-sm font-medium text-muted-foreground mt-0.5">
+        <div className="mt-5">
+          <p className="text-2xl font-semibold tracking-tight text-foreground">{value}</p>
+          <p className="text-sm font-medium text-muted-foreground mt-1">
             {label}
           </p>
           {description && (
-            <p className="text-xs text-muted-foreground/70 mt-1">
+            <p className="text-xs text-muted-foreground/60 mt-1.5">
               {description}
             </p>
           )}
