@@ -4,12 +4,23 @@ export type Role = 'maintainer' | 'viewer';
 export type TransactionType = 'deposit' | 'withdrawal' | 'return' | 'opening_balance' | 'interest';
 export type TransactionStatus = 'active' | 'void';
 
+export interface NotificationPrefs {
+  enabled: boolean;
+  deposit: boolean;
+  withdrawal: boolean;
+  return: boolean;
+  interest: boolean;
+  opening_balance: boolean;
+  updatedAt?: Timestamp;
+}
+
 export interface UserDoc {
   uid: string;
   displayName: string;
   email: string;
   role: Role;
   active: boolean;
+  notificationPrefs?: NotificationPrefs;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

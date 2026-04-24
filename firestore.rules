@@ -12,7 +12,11 @@ service cloud.firestore {
     
     match /users/{uid} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow create, delete: if false;
+      // Allow users to update their own notification preferences
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['notificationPrefs', 'updatedAt']);
     }
     
     match /members/{memberId} {

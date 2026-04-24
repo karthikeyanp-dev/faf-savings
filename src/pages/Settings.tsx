@@ -62,8 +62,14 @@ import {
   Building2,
   Download,
   Wallet,
+  Bell,
+  BellOff,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNotifications } from "@/hooks/useNotifications";
+import { Switch } from "@/components/ui/switch";
+import type { TransactionType } from "@/types";
 
 // Settings Section Card — defined outside SettingsPage to avoid re-mount on state change
 function SettingsSection({
@@ -187,6 +193,7 @@ function MemberCard({
 
 export function SettingsPage() {
   const { user, isMaintainer } = useAuth();
+  const notifications = useNotifications();
   const queryClient = useQueryClient();
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberDoc | null>(null);
@@ -762,6 +769,111 @@ export function SettingsPage() {
                       Pool Maintainer
                     </p>
                   </div>
+                </div>
+              </SettingsSection>
+            </StaggerItem>
+          )}
+
+          {/* Notifications */}
+          {isMaintainer ? (
+            <StaggerItem>
+              <SettingsSection
+                title="Notifications"
+                description="Push notification settings"
+                icon={Bell}
+              >
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl">
+                  <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center shrink-0">
+                    <BellOff className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">Maintainer Account</p>
+                    <p className="text-xs text-muted-foreground">
+                      Notifications are for viewer accounts. As the maintainer, you make the changes.
+                    </p>
+                  </div>
+                </div>
+              </SettingsSection>
+            </StaggerItem>
+          ) : (
+            <StaggerItem>
+              <SettingsSection
+                title="Notifications"
+                description="Get notified about transaction updates"
+                icon={Bell}
+              >
+                <div className="space-y-4">
+                  {/* Permission denied state */}
+                  {notifications.permission === 'denied' && (
+                    <div className="flex items-start gap-3 p-3 bg-destructive/10 rounded-xl border border-destructive/20">
+                      <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-destructive">Notifications Blocked</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          To receive notifications, please enable them in your browser settings:
+                          go to Site Settings &rarr; Notifications &rarr; Allow.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Enable/Disable toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Push Notifications</p>
+                      <p className="text-xs text-muted-foreground">
+                        {notifications.permission === 'default'
+                          ? 'Tap to enable and allow notifications'
+                          : notifications.permission === 'denied'
+                            ? 'Blocked by browser settings'
+                            : notifications.prefs.enabled
+                              ? 'Notifications are active'
+                              : 'Notifications are paused'}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={notifications.prefs.enabled}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          notifications.enableNotifications();
+                        } else {
+                          notifications.disableNotifications();
+                        }
+                      }}
+                      disabled={notifications.permission === 'denied'}
+                    />
+                  </div>
+
+                  {/* Type preferences — only shown when enabled */}
+                  {notifications.prefs.enabled && (
+                    <>
+                      <div className="pt-2 border-t border-border/50">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                          Notify me about
+                        </p>
+                        <div className="space-y-3">
+                          {([
+                            ['deposit', 'Deposits', 'Money added to the pool'],
+                            ['withdrawal', 'Withdrawals', 'Money taken from the pool'],
+                            ['return', 'Returns', 'Funds returned to members'],
+                            ['interest', 'Interest', 'Interest added to pool balance'],
+                            ['opening_balance', 'Balance Updates', 'Previous balance adjustments'],
+                          ] as [TransactionType, string, string][]).map(([type, label, desc]) => (
+                            <div key={type} className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-medium">{label}</p>
+                                <p className="text-xs text-muted-foreground">{desc}</p>
+                              </div>
+                              <Switch
+                                checked={notifications.prefs[type]}
+                                onCheckedChange={() => notifications.toggleTypePref(type)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </SettingsSection>
             </StaggerItem>
