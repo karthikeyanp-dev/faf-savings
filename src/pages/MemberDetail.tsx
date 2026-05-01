@@ -190,9 +190,17 @@ export function MemberDetailPage() {
   const fyDeposited = fyTransactions
     .filter((t) => t.memberId === member.id && t.type === "deposit")
     .reduce((sum, t) => sum + t.amount, 0);
+  const fyWithdrawnRaw = fyTransactions
+    .filter((t) => t.memberId === member.id && t.type === "withdrawal")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const fyReturned = fyTransactions
+    .filter((t) => t.memberId === member.id && t.type === "return")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const fyNetWithdrawn = Math.max(0, fyWithdrawnRaw - fyReturned);
+  const fyNetBalance = fyDeposited - fyNetWithdrawn;
   const progressPct =
     fyTarget > 0
-      ? Math.min(100, Math.round((fyDeposited / fyTarget) * 100))
+      ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100)))
       : 0;
 
   // All transactions for this member, sorted by date descending
@@ -371,7 +379,7 @@ export function MemberDetailPage() {
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-semibold">FY {currentFY} Progress</p>
                 <p className="text-sm font-medium">
-                  {formatINR(fyDeposited)} / {formatINR(fyTarget)}
+                  {formatINR(fyNetBalance)} / {formatINR(fyTarget)}
                 </p>
               </div>
               <div className="h-3 bg-muted rounded-full overflow-hidden mt-2">
@@ -394,7 +402,7 @@ export function MemberDetailPage() {
                 <p className="text-xs text-muted-foreground">
                   {progressPct >= 100
                     ? "Target reached!"
-                    : `${formatINR(fyTarget - fyDeposited)} remaining`}
+                    : `${formatINR(Math.max(0, fyTarget - fyNetBalance))} remaining`}
                 </p>
               </div>
             </CardContent>

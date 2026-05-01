@@ -41,7 +41,8 @@ function MemberCard({
   fyTarget: number;
   onClick: () => void;
 }) {
-  const progressPct = fyTarget > 0 ? Math.min(100, Math.round((fyDeposited / fyTarget) * 100)) : 0;
+  const fyNetBalance = fyDeposited - fyWithdrawn;
+  const progressPct = fyTarget > 0 ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100))) : 0;
 
   return (
     <motion.div
@@ -107,7 +108,7 @@ function MemberCard({
             </div>
             <div className="flex items-center justify-between mt-1">
               <p className="text-xs text-muted-foreground">FY Progress</p>
-              <p className="text-xs text-muted-foreground">{formatINR(fyDeposited)} / {formatINR(fyTarget)}</p>
+              <p className="text-xs text-muted-foreground">{formatINR(fyNetBalance)} / {formatINR(fyTarget)}</p>
             </div>
           </div>
         </CardContent>
@@ -294,7 +295,15 @@ export function MembersPage() {
                   const memberFyDeposited = fyTransactions
                     .filter((t) => t.memberId === member.id && t.type === 'deposit')
                     .reduce((sum, t) => sum + t.amount, 0);
-                  const progressPct = fyTarget > 0 ? Math.min(100, Math.round((memberFyDeposited / fyTarget) * 100)) : 0;
+                  const memberFyWithdrawnRaw = fyTransactions
+                    .filter((t) => t.memberId === member.id && t.type === 'withdrawal')
+                    .reduce((sum, t) => sum + t.amount, 0);
+                  const memberFyReturned = fyTransactions
+                    .filter((t) => t.memberId === member.id && t.type === 'return')
+                    .reduce((sum, t) => sum + t.amount, 0);
+                  const memberFyNetWithdrawn = Math.max(0, memberFyWithdrawnRaw - memberFyReturned);
+                  const memberFyNetBalance = memberFyDeposited - memberFyNetWithdrawn;
+                  const progressPct = fyTarget > 0 ? Math.max(0, Math.min(100, Math.round((memberFyNetBalance / fyTarget) * 100))) : 0;
 
                   return (
                     <TableRow 

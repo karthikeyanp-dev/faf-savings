@@ -160,56 +160,99 @@ function MemberCard({
   member,
   net,
   receivable,
+  previousBal,
   fyDeposited,
+  fyWithdrawn,
   fyTarget,
 }: {
   member: MemberDoc;
   net: number;
   receivable: number;
+  previousBal: number;
   fyDeposited: number;
+  fyWithdrawn: number;
   fyTarget: number;
 }) {
+  const fyNetBalance = fyDeposited - fyWithdrawn;
   const progressPct =
     fyTarget > 0
-      ? Math.min(100, Math.round((fyDeposited / fyTarget) * 100))
+      ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100)))
       : 0;
 
   return (
     <Card>
       <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0",
+                member.active
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {member.name.charAt(0).toUpperCase()}
+            </div>
+            <p className="font-semibold truncate">{member.name}</p>
+          </div>
+          <p
             className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold",
-              member.active
-                ? "bg-primary/10 text-primary"
-                : "bg-muted text-muted-foreground",
+              "text-lg font-bold shrink-0",
+              net >= 0
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-rose-600 dark:text-rose-400",
             )}
           >
-            {member.name.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className="font-semibold">{member.name}</p>
-          </div>
+            {formatINR(net)}
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-4 pt-4 border-t border-border">
           <div>
-            <p
-              className={cn(
-                "text-lg font-bold",
-                net >= 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-rose-600 dark:text-rose-400",
-              )}
-            >
-              {formatINR(net)}
+            <p className="text-base font-bold text-muted-foreground/60">
+              {previousBal !== 0 ? formatINR(previousBal) : "—"}
             </p>
-            <p className="text-xs text-muted-foreground">Balance</p>
+            <p className="text-xs text-muted-foreground">Previous Bal</p>
           </div>
           <div className="text-right">
-            <p className="text-lg font-bold">{formatINR(receivable)}</p>
+            <p
+              className={cn(
+                "text-base font-bold",
+                receivable > 0
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-muted-foreground/60",
+              )}
+            >
+              {formatINR(receivable)}
+            </p>
             <p className="text-xs text-muted-foreground">Outstanding</p>
+          </div>
+          <div>
+            <p
+              className={cn(
+                "text-base font-bold",
+                fyDeposited > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground/60",
+              )}
+            >
+              {formatINR(fyDeposited)}
+            </p>
+            <p className="text-xs text-muted-foreground">FY Deposit</p>
+          </div>
+          <div className="text-right">
+            <p
+              className={cn(
+                "text-base font-bold",
+                fyWithdrawn > 0
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground/60",
+              )}
+            >
+              {formatINR(fyWithdrawn)}
+            </p>
+            <p className="text-xs text-muted-foreground">FY Withdrawn</p>
           </div>
         </div>
 
@@ -231,7 +274,7 @@ function MemberCard({
           <div className="flex items-center justify-between mt-1">
             <p className="text-xs text-muted-foreground">FY Progress</p>
             <p className="text-xs text-muted-foreground">
-              {formatINR(fyDeposited)} / {formatINR(fyTarget)}
+              {formatINR(fyNetBalance)} / {formatINR(fyTarget)}
             </p>
           </div>
         </div>
@@ -428,15 +471,28 @@ export function DashboardPage() {
           {/* Mobile: Card List */}
           <StaggerContainer className="lg:hidden space-y-3">
             {members.map((member) => {
+              const memberOb = getOpeningBalance(openingBalances, member.id);
               const net = calculateMemberNet(
                 activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
                 member.id,
-                getOpeningBalance(openingBalances, member.id),
+                memberOb,
               );
               const receivable = Math.max(0, -net);
               const memberFyDeposited = fyTransactions
                 .filter((t) => t.memberId === member.id && t.type === "deposit")
                 .reduce((sum, t) => sum + t.amount, 0);
+              const memberFyWithdrawn = fyTransactions
+                .filter(
+                  (t) => t.memberId === member.id && t.type === "withdrawal",
+                )
+                .reduce((sum, t) => sum + t.amount, 0);
+              const memberFyReturned = fyTransactions
+                .filter((t) => t.memberId === member.id && t.type === "return")
+                .reduce((sum, t) => sum + t.amount, 0);
+              const memberFyNetWithdrawn = Math.max(
+                0,
+                memberFyWithdrawn - memberFyReturned,
+              );
 
               return (
                 <StaggerItem key={member.id}>
@@ -444,7 +500,9 @@ export function DashboardPage() {
                     member={member}
                     net={net}
                     receivable={receivable}
+                    previousBal={memberOb}
                     fyDeposited={memberFyDeposited}
+                    fyWithdrawn={memberFyNetWithdrawn}
                     fyTarget={fyTarget}
                   />
                 </StaggerItem>
@@ -463,8 +521,9 @@ export function DashboardPage() {
                       Previous Bal
                     </TableHead>
                     <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">FY Deposited</TableHead>
+                    <TableHead className="text-right">FY Withdrawn</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">Progress</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -488,11 +547,33 @@ export function DashboardPage() {
                         (t) => t.memberId === member.id && t.type === "deposit",
                       )
                       .reduce((sum, t) => sum + t.amount, 0);
+                    const memberFyWithdrawnRaw = fyTransactions
+                      .filter(
+                        (t) =>
+                          t.memberId === member.id && t.type === "withdrawal",
+                      )
+                      .reduce((sum, t) => sum + t.amount, 0);
+                    const memberFyReturned = fyTransactions
+                      .filter(
+                        (t) => t.memberId === member.id && t.type === "return",
+                      )
+                      .reduce((sum, t) => sum + t.amount, 0);
+                    const memberFyNetWithdrawn = Math.max(
+                      0,
+                      memberFyWithdrawnRaw - memberFyReturned,
+                    );
+                    const memberFyNetBalance =
+                      memberFyDeposited - memberFyNetWithdrawn;
                     const progressPct =
                       fyTarget > 0
-                        ? Math.min(
-                            100,
-                            Math.round((memberFyDeposited / fyTarget) * 100),
+                        ? Math.max(
+                            0,
+                            Math.min(
+                              100,
+                              Math.round(
+                                (memberFyNetBalance / fyTarget) * 100,
+                              ),
+                            ),
                           )
                         : 0;
 
@@ -514,11 +595,35 @@ export function DashboardPage() {
                         >
                           {formatINR(net)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatINR(receivable)}
-                        </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell
+                          className={cn(
+                            "text-right",
+                            memberFyDeposited > 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-muted-foreground/60",
+                          )}
+                        >
                           {formatINR(memberFyDeposited)}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right",
+                            memberFyNetWithdrawn > 0
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-muted-foreground/60",
+                          )}
+                        >
+                          {formatINR(memberFyNetWithdrawn)}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right",
+                            receivable > 0
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-muted-foreground/60",
+                          )}
+                        >
+                          {formatINR(receivable)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center gap-2 justify-end">
