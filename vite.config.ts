@@ -24,14 +24,32 @@ export default defineConfig({
             type: 'image/png'
           },
           {
+            src: 'pwa-192x192.webp',
+            sizes: '192x192',
+            type: 'image/webp',
+            purpose: 'any'
+          },
+          {
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png'
           },
           {
+            src: 'pwa-512x512.webp',
+            sizes: '512x512',
+            type: 'image/webp',
+            purpose: 'any'
+          },
+          {
             src: 'maskable-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: 'maskable-icon-512x512.webp',
+            sizes: '512x512',
+            type: 'image/webp',
             purpose: 'maskable'
           }
         ]
@@ -49,6 +67,23 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split heavy vendors into long-cache chunks so the first route
+        // downloads as little JS as possible. The function form is more
+        // robust than the object form because the Firebase SDK ships
+        // many sub-entries (firestore/auth/app/...) that all live under
+        // `node_modules/firebase/...`.
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) return 'firebase';
+          if (id.includes('node_modules/framer-motion')) return 'framer-motion';
+          if (id.includes('node_modules/@tanstack')) return 'tanstack';
+          if (id.includes('node_modules/react-router')) return 'router';
+        },
+      },
     },
   },
 })

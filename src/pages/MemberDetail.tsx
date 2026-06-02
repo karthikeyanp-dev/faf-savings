@@ -1,13 +1,15 @@
+import { memo, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getTransactionsByMember, membersRef } from "@/lib/firestore";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   formatINR,
   getCurrentFY,
-  calculateMemberNet,
   calculateFYTarget,
   formatDate,
   getOpeningBalance,
@@ -23,11 +25,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { motion } from "framer-motion";
-import {
-  StaggerContainer,
-  StaggerItem,
-} from "@/components/animations/PageTransition";
+import { m } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 const txTypeConfig = {
@@ -50,7 +48,13 @@ const txTypeConfig = {
   },
 };
 
-function TransactionRow({ tx }: { tx: TransactionDoc }) {
+// Transaction history row. Memoized so unrelated parent state changes
+// (e.g. opening balance editing) do not re-render every history row.
+const TransactionRow = memo(function TransactionRow({
+  tx,
+}: {
+  tx: TransactionDoc;
+}) {
   const config = txTypeConfig[tx.type] || txTypeConfig.deposit;
   const Icon = config.icon;
   const isActive = tx.status === "active";
@@ -106,7 +110,7 @@ function TransactionRow({ tx }: { tx: TransactionDoc }) {
       </CardContent>
     </Card>
   );
-}
+});
 
 export function MemberDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -117,19 +121,21 @@ export function MemberDetailPage() {
   const { data: members = [], isLoading: membersLoading } = useQuery({
     queryKey: ["members"],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, "members"));
+      const snap = await getDocs(membersRef);
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MemberDoc);
     },
   });
 
   const { data: transactions = [], isLoading: transactionsLoading } = useQuery({
-    queryKey: ["transactions"],
+    queryKey: ["transactions", "member", id],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, "transactions"));
+      if (!id) return [] as TransactionDoc[];
+      const snap = await getDocs(getTransactionsByMember(id));
       return snap.docs.map(
         (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
       );
     },
+    enabled: !!id,
   });
 
   const { data: config, isLoading: configLoading } = useQuery({
@@ -139,6 +145,52 @@ export function MemberDetailPage() {
       return snap.data() as AppConfig;
     },
   });
+
+  // transactions is already member-scoped (getTransactionsByMember) so
+  // every filter by memberId is redundant; build all aggregates in a
+  // single pass and store the result in a memo.
+  const aggregates = useMemo(() => {
+    let totalDeposit = 0;
+    let totalReturn = 0;
+    let totalWithdrawal = 0;
+    let fyDeposited = 0;
+    let fyWithdrawnRaw = 0;
+    let fyReturned = 0;
+    let net = 0;
+    for (const t of transactions) {
+      if (t.status === "active") {
+        if (t.type === "deposit") {
+          totalDeposit += t.amount;
+          net += t.amount;
+        } else if (t.type === "return") {
+          totalReturn += t.amount;
+          net += t.amount;
+        } else if (t.type === "withdrawal") {
+          totalWithdrawal += t.amount;
+          net -= t.amount;
+        }
+      }
+      if (t.fy === currentFY && t.status === "active") {
+        if (t.type === "deposit") fyDeposited += t.amount;
+        else if (t.type === "withdrawal") fyWithdrawnRaw += t.amount;
+        else if (t.type === "return") fyReturned += t.amount;
+      }
+    }
+    return {
+      totalDeposit,
+      totalReturn,
+      totalWithdrawal,
+      fyDeposited,
+      fyWithdrawn: Math.max(0, fyWithdrawnRaw - fyReturned),
+      fyNetBalance: fyDeposited - Math.max(0, fyWithdrawnRaw - fyReturned),
+      net,
+    };
+  }, [transactions, currentFY]);
+
+  const memberById = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members],
+  );
 
   if (membersLoading || transactionsLoading || configLoading) {
     return (
@@ -150,7 +202,7 @@ export function MemberDetailPage() {
     );
   }
 
-  const member = members.find((m) => m.id === id);
+  const member = memberById.get(id ?? "");
   if (!member) {
     return (
       <AppLayout>
@@ -167,59 +219,49 @@ export function MemberDetailPage() {
     );
   }
 
-  const activeTransactions = transactions.filter((t) => t.status === "active");
-  const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
   const openingBalances = config?.openingBalances;
   const openingBalance = getOpeningBalance(openingBalances, member.id);
-
-  const net = calculateMemberNet(
-    activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-    member.id,
-    openingBalance,
-  );
+  const net = aggregates.net + openingBalance;
   const receivable = Math.max(0, -net);
-  const totalDeposit = activeTransactions
-    .filter((t) => t.memberId === member.id && t.type === "deposit")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalReturn = activeTransactions
-    .filter((t) => t.memberId === member.id && t.type === "return")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalWithdrawal = activeTransactions
-    .filter((t) => t.memberId === member.id && t.type === "withdrawal")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyDeposited = fyTransactions
-    .filter((t) => t.memberId === member.id && t.type === "deposit")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyWithdrawnRaw = fyTransactions
-    .filter((t) => t.memberId === member.id && t.type === "withdrawal")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyReturned = fyTransactions
-    .filter((t) => t.memberId === member.id && t.type === "return")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyNetWithdrawn = Math.max(0, fyWithdrawnRaw - fyReturned);
-  const fyNetBalance = fyDeposited - fyNetWithdrawn;
+  const totalDeposit = aggregates.totalDeposit;
+  const totalReturn = aggregates.totalReturn;
+  const totalWithdrawal = aggregates.totalWithdrawal;
+  const fyNetBalance = aggregates.fyNetBalance;
   const progressPct =
     fyTarget > 0
       ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100)))
       : 0;
 
-  // All transactions for this member, sorted by date descending
-  const memberTransactions = transactions
-    .filter((t) => t.memberId === member.id && t.type !== "opening_balance")
-    .sort((a, b) => b.date.toMillis() - a.date.toMillis());
+  // transactions is already sorted by date desc server-side
+  // (getTransactionsByMember uses orderBy('date', 'desc')).
+  const memberTransactions = transactions.filter(
+    (t) => t.type !== "opening_balance",
+  );
+
+  // Virtualize the history list. Cards have variable height depending on
+  // notes and savingsMonth, so we measure dynamically. The scroll parent
+  // ref is attached to the wrapper div below.
+  const historyScrollRef = useRef<HTMLDivElement>(null);
+  const historyVirtualizer = useVirtualizer({
+    count: memberTransactions.length,
+    getScrollElement: () => historyScrollRef.current,
+    estimateSize: () => 120,
+    overscan: 5,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
 
   return (
     <AppLayout>
       <div className="space-y-6">
         {/* Header with back button */}
         <div className="flex items-center gap-3">
-          <motion.button
+          <m.button
             whileTap={{ scale: 0.9 }}
             onClick={() => navigate("/members")}
             className="p-2 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
-          </motion.button>
+          </m.button>
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -244,7 +286,7 @@ export function MemberDetailPage() {
         </div>
 
         {/* KPI Cards */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
@@ -269,12 +311,12 @@ export function MemberDetailPage() {
               </p>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-3">
           {openingBalance !== 0 && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.02 }}
@@ -292,9 +334,9 @@ export function MemberDetailPage() {
                   </p>
                 </CardContent>
               </Card>
-            </motion.div>
+            </m.div>
           )}
-          <motion.div
+          <m.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
@@ -310,8 +352,8 @@ export function MemberDetailPage() {
                 <p className="text-[11px] text-muted-foreground">Current FY</p>
               </CardContent>
             </Card>
-          </motion.div>
-          <motion.div
+          </m.div>
+          <m.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -327,9 +369,9 @@ export function MemberDetailPage() {
                 <p className="text-[11px] text-muted-foreground">Amount owed</p>
               </CardContent>
             </Card>
-          </motion.div>
+          </m.div>
           {totalReturn > 0 && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12 }}
@@ -345,10 +387,10 @@ export function MemberDetailPage() {
                   <p className="text-[11px] text-muted-foreground">Received</p>
                 </CardContent>
               </Card>
-            </motion.div>
+            </m.div>
           )}
           {totalWithdrawal > 0 && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.14 }}
@@ -364,12 +406,12 @@ export function MemberDetailPage() {
                   <p className="text-[11px] text-muted-foreground">Taken out</p>
                 </CardContent>
               </Card>
-            </motion.div>
+            </m.div>
           )}
         </div>
 
         {/* FY Progress */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
@@ -407,24 +449,50 @@ export function MemberDetailPage() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* Transaction History */}
         <section>
           <h2 className="text-lg font-semibold mb-3 px-1">
             Transaction History
           </h2>
-          <StaggerContainer className="space-y-3">
-            {memberTransactions.map((tx) => (
-              <StaggerItem key={tx.id}>
-                <TransactionRow tx={tx} />
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-
-          {memberTransactions.length === 0 && (
+          {memberTransactions.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground">No transactions found</p>
+            </div>
+          ) : (
+            <div
+              ref={historyScrollRef}
+              className="relative overflow-auto max-h-[70vh] -mx-1 px-1"
+            >
+              <div
+                style={{
+                  height: `${historyVirtualizer.getTotalSize()}px`,
+                  width: "100%",
+                  position: "relative",
+                }}
+              >
+                {historyVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const tx = memberTransactions[virtualRow.index];
+                  return (
+                    <div
+                      key={tx.id}
+                      data-index={virtualRow.index}
+                      ref={historyVirtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`,
+                        paddingBottom: "12px",
+                      }}
+                    >
+                      <TransactionRow tx={tx} />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>

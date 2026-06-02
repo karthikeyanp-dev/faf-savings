@@ -1,6 +1,6 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { useLocation } from "react-router-dom";
-import { ReactNode } from "react";
+import { Children, ReactNode, isValidElement } from "react";
 
 interface PageTransitionProps {
   children: ReactNode;
@@ -35,7 +35,7 @@ export function PageTransition({ children }: PageTransitionProps) {
 
   return (
     <AnimatePresence mode="wait">
-      <motion.div
+      <m.div
         key={location.pathname}
         initial="initial"
         animate="in"
@@ -45,12 +45,16 @@ export function PageTransition({ children }: PageTransitionProps) {
         className="h-full"
       >
         {children}
-      </motion.div>
+      </m.div>
     </AnimatePresence>
   );
 }
 
-// Staggered list animation wrapper
+// Staggered list animation wrapper. With 30+ rows the cascade noticeably
+// delays first paint, so the first STAGGER_LIMIT children get the
+// entrance animation and the rest render statically.
+const STAGGER_LIMIT = 10;
+
 interface StaggerContainerProps {
   children: ReactNode;
   className?: string;
@@ -64,8 +68,11 @@ export function StaggerContainer({
   staggerDelay = 0.05,
   delay = 0,
 }: StaggerContainerProps) {
+  // Flatten the children so we can decide per-element whether to wrap
+  // it in a StaggerItem. React Fragments and arrays are common here.
+  const arr = Children.toArray(children);
   return (
-    <motion.div
+    <m.div
       initial="hidden"
       animate="visible"
       variants={{
@@ -80,8 +87,19 @@ export function StaggerContainer({
       }}
       className={className}
     >
-      {children}
-    </motion.div>
+      {arr.map((child, i) => {
+        if (i < STAGGER_LIMIT) {
+          return (
+            <StaggerItem key={isValidElement(child) && child.key ? child.key : i}>
+              {child}
+            </StaggerItem>
+          );
+        }
+        // Render the tail as plain children so the cascade doesn't
+        // extend animation work past the 10th item.
+        return <FragmentLike key={i}>{child}</FragmentLike>;
+      })}
+    </m.div>
   );
 }
 
@@ -93,7 +111,7 @@ interface StaggerItemProps {
 
 export function StaggerItem({ children, className = "" }: StaggerItemProps) {
   return (
-    <motion.div
+    <m.div
       variants={{
         hidden: { opacity: 0, y: 20, scale: 0.95 },
         visible: {
@@ -110,7 +128,7 @@ export function StaggerItem({ children, className = "" }: StaggerItemProps) {
       className={`w-full ${className}`}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -129,7 +147,7 @@ export function TapScale({
   onClick,
 }: TapScaleProps) {
   return (
-    <motion.div
+    <m.div
       whileTap={{ scale }}
       whileHover={{ scale: 1.01 }}
       transition={{ type: "spring", stiffness: 400, damping: 20 }}
@@ -137,170 +155,13 @@ export function TapScale({
       onClick={onClick}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
-// Slide up animation for bottom sheets/modals
-interface SlideUpProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function SlideUp({ children, className = "" }: SlideUpProps) {
-  return (
-    <motion.div
-      initial={{ y: "100%", opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: "100%", opacity: 0 }}
-      transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Fade in animation wrapper
-interface FadeInProps {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-}
-
-export function FadeIn({ children, className = "", delay = 0 }: FadeInProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Scale in animation for cards and modals
-interface ScaleInProps {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-}
-
-export function ScaleIn({ children, className = "", delay = 0 }: ScaleInProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: "spring", stiffness: 300, damping: 25, delay }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Slide in from left
-interface SlideInLeftProps {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-}
-
-export function SlideInLeft({
-  children,
-  className = "",
-  delay = 0,
-}: SlideInLeftProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -30 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 25, delay }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Slide in from right
-interface SlideInRightProps {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-}
-
-export function SlideInRight({
-  children,
-  className = "",
-  delay = 0,
-}: SlideInRightProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 30 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 25, delay }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Floating animation for decorative elements
-interface FloatProps {
-  children: ReactNode;
-  className?: string;
-  duration?: number;
-  distance?: number;
-}
-
-export function Float({
-  children,
-  className = "",
-  duration = 3,
-  distance = 10,
-}: FloatProps) {
-  return (
-    <motion.div
-      animate={{
-        y: [-distance / 2, distance / 2, -distance / 2],
-      }}
-      transition={{
-        duration,
-        repeat: Infinity,
-        ease: "easeInOut",
-      }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Pulse animation for notifications/attention
-interface PulseProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function Pulse({ children, className = "" }: PulseProps) {
-  return (
-    <motion.div
-      animate={{
-        scale: [1, 1.05, 1],
-        opacity: [1, 0.8, 1],
-      }}
-      transition={{
-        duration: 2,
-        repeat: Infinity,
-        ease: "easeInOut",
-      }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+// A zero-cost wrapper that just renders its children. Used as the
+// passthrough for StaggerContainer children past the first
+// STAGGER_LIMIT so we don't pay the Framer Motion cost per extra row.
+function FragmentLike({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }

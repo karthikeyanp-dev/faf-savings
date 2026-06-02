@@ -50,7 +50,7 @@ function TransactionFormContent({
     <form onSubmit={onSubmit} className="space-y-5">
       <div>
         <Label className="text-sm font-medium">Transaction Type</Label>
-        <div className="grid grid-cols-4 gap-2 mt-1.5">
+        <div className="grid grid-cols-2 gap-2 mt-1.5">
           {["deposit", "return", "withdrawal", "interest"].map((type) => (
             <button
               key={type}

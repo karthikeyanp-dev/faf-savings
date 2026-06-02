@@ -1,12 +1,19 @@
-import { collection, doc, query, where, orderBy, limit } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  type QueryDocumentSnapshot,
+  type DocumentData,
+} from 'firebase/firestore';
 import { db } from './firebase';
 
-export const usersRef = collection(db, 'users');
 export const membersRef = collection(db, 'members');
 export const transactionsRef = collection(db, 'transactions');
-export const configRef = doc(db, 'config', 'app');
 export const statsRef = doc(db, 'stats', 'current');
-export const maintainerHistoryRef = collection(db, 'maintainerHistory');
 
 export function getTransactionsByFY(fy: string) {
   return query(
@@ -35,11 +42,16 @@ export function getAllActiveTransactions() {
   );
 }
 
-export function getAllTransactions() {
-  return query(
-    transactionsRef,
+export function getAllTransactions(
+  cursor?: QueryDocumentSnapshot<DocumentData>
+) {
+  const constraints: Parameters<typeof query>[1][] = [
     where('status', 'in', ['active', 'void']),
     orderBy('date', 'desc'),
-    limit(100)
-  );
+    limit(50),
+  ];
+  if (cursor) {
+    constraints.push(startAfter(cursor));
+  }
+  return query(transactionsRef, ...constraints);
 }

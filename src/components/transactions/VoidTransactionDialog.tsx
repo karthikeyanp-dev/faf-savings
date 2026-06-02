@@ -50,12 +50,12 @@ export function VoidTransactionDialog({
         reason: data.reason,
       });
 
-      toast.success(`Transaction voided! New balance: ₹${result.newBalance}`);
+      toast.success(`Transaction reverted! New balance: ₹${result.newBalance}`);
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
       onClose();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to void transaction');
+      toast.error(error.message || 'Failed to revert transaction');
     }
   };
 
@@ -75,7 +75,7 @@ export function VoidTransactionDialog({
         <Label className="text-sm font-medium">Reason (required)</Label>
         <Input 
           {...register('reason')} 
-          placeholder="Why are you voiding this transaction?" 
+          placeholder="Why are you reverting this transaction?" 
           className="mt-1.5"
         />
         {errors.reason && <p className="text-sm text-destructive mt-1">{errors.reason.message}</p>}
@@ -87,7 +87,7 @@ export function VoidTransactionDialog({
           Cancel
         </Button>
         <Button type="submit" variant="destructive" disabled={isSubmitting}>
-          {isSubmitting ? 'Voiding...' : 'Void Transaction'}
+          {isSubmitting ? 'Reverting...' : 'Revert Transaction'}
         </Button>
       </div>
     </form>
@@ -99,9 +99,9 @@ export function VoidTransactionDialog({
       <FullScreenDrawer
         open={open}
         onOpenChange={onClose}
-        title="Void Transaction"
+        title="Revert Transaction"
         onSave={handleSubmit(onSubmit)}
-        saveLabel={isSubmitting ? 'Voiding...' : 'Void'}
+        saveLabel={isSubmitting ? 'Reverting...' : 'Revert'}
       >
         {formContent}
       </FullScreenDrawer>
@@ -113,7 +113,7 @@ export function VoidTransactionDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Void Transaction</DialogTitle>
+          <DialogTitle>Revert Transaction</DialogTitle>
           <DialogDescription>
             This will reverse the transaction and update the pool balance. This action cannot be undone.
           </DialogDescription>

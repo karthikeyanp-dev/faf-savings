@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { LayoutDashboard, Users, Activity, Settings, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +43,7 @@ export function BottomNav({
                 isActive ? "text-primary" : "text-muted-foreground",
               )}
             >
-              <motion.div
+              <m.div
                 whileTap={{ scale: 0.9 }}
                 className={cn(
                   "relative p-2.5 rounded-xl transition-all duration-200",
@@ -52,13 +52,13 @@ export function BottomNav({
               >
                 <Icon className="h-5 w-5" />
                 {isActive && (
-                  <motion.div
+                  <m.div
                     layoutId="bottomNavIndicator"
                     className="absolute inset-0 bg-primary/10 rounded-xl -z-10"
                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
                   />
                 )}
-              </motion.div>
+              </m.div>
               <span className="text-[11px] font-medium">{item.label}</span>
             </Link>
           );
@@ -67,7 +67,7 @@ export function BottomNav({
         {/* Floating Action Button */}
         {showAddButton && (
           <div className="flex-1 flex justify-center -mt-8">
-            <motion.button
+            <m.button
               whileTap={{ scale: 0.9 }}
               whileHover={{ scale: 1.05 }}
               onClick={onAddTransaction}
@@ -75,7 +75,7 @@ export function BottomNav({
               aria-label="Add transaction"
             >
               <Plus className="h-6 w-6" />
-            </motion.button>
+            </m.button>
           </div>
         )}
 
@@ -93,7 +93,7 @@ export function BottomNav({
                 isActive ? "text-primary" : "text-muted-foreground",
               )}
             >
-              <motion.div
+              <m.div
                 whileTap={{ scale: 0.9 }}
                 className={cn(
                   "relative p-2.5 rounded-xl transition-all duration-200",
@@ -102,13 +102,13 @@ export function BottomNav({
               >
                 <Icon className="h-5 w-5" />
                 {isActive && (
-                  <motion.div
+                  <m.div
                     layoutId="bottomNavIndicator"
                     className="absolute inset-0 bg-primary/10 rounded-xl -z-10"
                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
                   />
                 )}
-              </motion.div>
+              </m.div>
               <span className="text-[11px] font-medium">{item.label}</span>
             </Link>
           );
@@ -143,7 +143,7 @@ export function SimpleBottomNav() {
                 isActive ? "text-primary" : "text-muted-foreground",
               )}
             >
-              <motion.div
+              <m.div
                 whileTap={{ scale: 0.9 }}
                 className={cn(
                   "relative p-2.5 rounded-xl transition-all duration-200",
@@ -152,13 +152,13 @@ export function SimpleBottomNav() {
               >
                 <Icon className="h-5 w-5" />
                 {isActive && (
-                  <motion.div
+                  <m.div
                     layoutId="simpleNavIndicator"
                     className="absolute inset-0 bg-primary/10 rounded-xl -z-10"
                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
                   />
                 )}
-              </motion.div>
+              </m.div>
               <span className="text-[11px] font-medium">{item.label}</span>
             </Link>
           );

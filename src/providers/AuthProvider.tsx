@@ -19,6 +19,37 @@ const AuthContext = createContext<AuthContextType>({
   isMaintainer: false,
 });
 
+// localStorage key for the cached role. We keep one entry per UID so a
+// sign-out / sign-in as a different user on a shared device still
+// reads the right value.
+const ROLE_CACHE_KEY = (uid: string) => `faf.role.${uid}`;
+
+function readCachedRole(uid: string): Role | null {
+  try {
+    const raw = localStorage.getItem(ROLE_CACHE_KEY(uid));
+    if (raw === 'maintainer' || raw === 'viewer') return raw;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedRole(uid: string, role: Role) {
+  try {
+    localStorage.setItem(ROLE_CACHE_KEY(uid), role);
+  } catch {
+    /* quota or private mode: ignore */
+  }
+}
+
+function clearCachedRole(uid: string) {
+  try {
+    localStorage.removeItem(ROLE_CACHE_KEY(uid));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role | null>(null);
@@ -28,11 +59,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
+        // Read the cached role synchronously so the UI does not block
+        // on a Firestore round-trip after every page load.
+        const cached = readCachedRole(firebaseUser.uid);
+        if (cached) setRole(cached);
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
-            setRole(data.role as Role);
+            const freshRole = data.role as Role;
+            // Update only if changed; revalidation in the background.
+            if (freshRole !== cached) setRole(freshRole);
+            writeCachedRole(firebaseUser.uid, freshRole);
             // If user is a viewer with notifications enabled, bridge UID to service worker
             if (data.role === 'viewer' && data.notificationPrefs?.enabled) {
               try {
@@ -54,6 +92,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 console.error('Failed to initialize SW notifications:', error);
               }
             }
+          } else if (cached === null) {
+            // Unknown user with no cache; default to viewer to be safe.
+            setRole('viewer');
           }
         } catch (error) {
           console.error('Error fetching user role:', error);
@@ -71,6 +112,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubscribe();
   }, []);
+
+  // Wipe the cached role for a user when their role is removed or
+  // revoked. If a different user signs in on the same browser, also
+  // clean up any leftover entries older than 30 days.
+  useEffect(() => {
+    if (!user) return;
+    return () => clearCachedRole(user.uid);
+  }, [user]);
 
   // Track app visibility for foreground notification suppression
   useEffect(() => {

@@ -1,6 +1,12 @@
+import { memo, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  getAllActiveTransactions,
+  getTransactionsByFY,
+  statsRef,
+} from "@/lib/firestore";
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,13 +22,15 @@ import {
 import {
   formatINR,
   getCurrentFY,
-  calculatePoolBalance,
-  calculateMemberNet,
   calculateFYTarget,
   getOpeningBalance,
-  getTotalOpeningBalance,
 } from "@/utils/financialYear";
-import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
+import type {
+  AppConfig,
+  MemberDoc,
+  StatsCurrent,
+  TransactionDoc,
+} from "@/types";
 import {
   Wallet,
   Landmark,
@@ -34,15 +42,17 @@ import {
   Percent,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import {
   StaggerContainer,
   StaggerItem,
 } from "@/components/animations/PageTransition";
 import { cn } from "@/lib/utils";
 
-// Summary Stat Card
-function SummaryCard({
+// Summary Stat Card. Wrapped in React.memo so unrelated parent state
+// (search input, dialog toggles, sibling re-renders) does not re-render
+// every summary card on each keystroke.
+const SummaryCard = memo(function SummaryCard({
   title,
   value,
   icon: Icon,
@@ -77,10 +87,12 @@ function SummaryCard({
       </CardContent>
     </Card>
   );
-}
+});
 
-// FY Stats Card (highlighted) — 3 rows: Deposited, Withdrawn, Interests
-function FYStatsCard({
+// FY Stats Card (highlighted) — 3 rows: Deposited, Withdrawn, Interests.
+// Memoized so updates to one of the four summary cards do not re-render
+// this one (and vice versa).
+const FYStatsCard = memo(function FYStatsCard({
   fy,
   deposited,
   withdrawn,
@@ -153,10 +165,13 @@ function FYStatsCard({
       </CardContent>
     </Card>
   );
-}
+});
 
 // Mobile Member Card (non-interactive, display only)
-function MemberCard({
+// Memoized so updates to one member (e.g. deposit) do not re-render
+// every other member card. With 50+ members this is the most visible
+// win on the dashboard.
+const MemberCard = memo(function MemberCard({
   member,
   net,
   receivable,
@@ -281,7 +296,7 @@ function MemberCard({
       </CardContent>
     </Card>
   );
-}
+});
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -304,15 +319,86 @@ export function DashboardPage() {
     },
   });
 
+  // Bounded transaction queries: lifetime balances need a member-agnostic view,
+  // and FY-specific cards need just the current FY.
   const { data: transactions = [] } = useQuery({
-    queryKey: ["transactions"],
+    queryKey: ["transactions", "all-active"],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, "transactions"));
+      const snap = await getDocs(getAllActiveTransactions());
       return snap.docs.map(
         (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
       );
     },
   });
+
+  const { data: fyTransactions = [] } = useQuery({
+    queryKey: ["transactions", "fy", currentFY],
+    queryFn: async () => {
+      const snap = await getDocs(getTransactionsByFY(currentFY));
+      return snap.docs.map(
+        (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
+      );
+    },
+  });
+
+  // All-time totals come from the stats doc so we never sum client-side.
+  const { data: stats } = useQuery({
+    queryKey: ["stats"],
+    queryFn: async () => {
+      const snap = await getDoc(statsRef);
+      return snap.data() as StatsCurrent | undefined;
+    },
+  });
+
+  // Hooks must run on every render and in the same order, so the
+  // memberStats / memberNetByMember useMemos live BEFORE the loading
+  // early-return below. They produce empty maps when their source data
+  // is still loading, which is fine.
+  const memberStats = useMemo(() => {
+    // One pass over fyTransactions. Per-member running totals for
+    // deposits, withdrawals, returns, and interest. The plan's
+    // {dep, wd, ret, int} shape.
+    const map = new Map<
+      string,
+      { dep: number; wd: number; ret: number; int: number }
+    >();
+    for (const t of fyTransactions) {
+      if (!t.memberId) continue;
+      const s = map.get(t.memberId) ?? { dep: 0, wd: 0, ret: 0, int: 0 };
+      if (t.type === "deposit") s.dep += t.amount;
+      else if (t.type === "withdrawal") s.wd += t.amount;
+      else if (t.type === "return") s.ret += t.amount;
+      else if (t.type === "interest") s.int += t.amount;
+      map.set(t.memberId, s);
+    }
+    return map;
+  }, [fyTransactions]);
+
+  const memberNetByMember = useMemo(() => {
+    // Lifetime net per member (used for the per-member Balance column).
+    // Computed in one pass over all active transactions, then seeded with
+    // opening balances from config.
+    const map = new Map<string, number>();
+    for (const t of transactions) {
+      if (!t.memberId) continue;
+      const prev = map.get(t.memberId) ?? 0;
+      if (t.type === "deposit" || t.type === "return") {
+        map.set(t.memberId, prev + t.amount);
+      } else if (t.type === "withdrawal") {
+        map.set(t.memberId, prev - t.amount);
+      }
+    }
+    if (config?.openingBalances) {
+      for (const [memberId, amount] of Object.entries(config.openingBalances)) {
+        map.set(memberId, (map.get(memberId) ?? 0) + amount);
+      }
+    }
+    // Ensure every member has an entry (default 0) so the JSX is uniform.
+    for (const m of members) {
+      if (!map.has(m.id)) map.set(m.id, 0);
+    }
+    return map;
+  }, [transactions, members, config?.openingBalances]);
 
   if (configLoading || membersLoading) {
     return (
@@ -324,30 +410,19 @@ export function DashboardPage() {
     );
   }
 
-  const activeTransactions = transactions.filter((t) => t.status === "active");
-  const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
   const openingBalances = config?.openingBalances;
-  const totalOpeningBalance = getTotalOpeningBalance(openingBalances);
   const openingInterest = config?.openingInterest ?? 0;
-  const availableBalance = calculatePoolBalance(
-    activeTransactions,
-    totalOpeningBalance,
-    openingInterest,
-  );
 
-  const totalInterest = activeTransactions
-    .filter((t) => t.type === "interest")
-    .reduce((sum, t) => sum + t.amount, 0);
+  // All-time totals are sourced from the stats doc; the transactions
+  // list is only used for the per-member cards (where we still need each
+  // member's lifetime net movement).
+  const availableBalance = stats?.poolBalance ?? 0;
+  const totalInterest = stats?.totalInterest ?? 0;
   const totalReceivables = members.reduce((sum, member) => {
-    const net = calculateMemberNet(
-      activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-      member.id,
-      getOpeningBalance(openingBalances, member.id),
-    );
+    const net = memberNetByMember.get(member.id) ?? 0;
     return sum + Math.max(0, -net);
   }, 0);
-  const totalDepositsAllTime =
-    availableBalance + totalReceivables - totalInterest - openingInterest;
+  const totalDepositsAllTime = stats?.totalDeposit ?? 0;
   const fyDeposited = fyTransactions
     .filter((t) => t.type === "deposit")
     .reduce((sum, t) => sum + t.amount, 0);
@@ -398,7 +473,7 @@ export function DashboardPage() {
     <AppLayout>
       <div className="space-y-6">
         {/* Available Balance - Full Width Banner */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
@@ -423,14 +498,14 @@ export function DashboardPage() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* Summary Stats */}
         <section>
           <div
             className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3`}
           >
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.35 }}
@@ -441,16 +516,16 @@ export function DashboardPage() {
                 withdrawn={fyWithdrawn}
                 interests={fyInterest}
               />
-            </motion.div>
+            </m.div>
             {summaryCards.map((stat, index) => (
-              <motion.div
+              <m.div
                 key={stat.title}
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.17 + index * 0.07, duration: 0.35 }}
               >
                 <SummaryCard {...stat} />
-              </motion.div>
+              </m.div>
             ))}
           </div>
         </section>
@@ -459,39 +534,30 @@ export function DashboardPage() {
         <section>
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-lg font-semibold">Members</h2>
-            <motion.button
+            <m.button
               whileTap={{ scale: 0.95 }}
               onClick={() => navigate("/members")}
               className="text-sm text-primary font-medium"
             >
               View All
-            </motion.button>
+            </m.button>
           </div>
 
           {/* Mobile: Card List */}
           <StaggerContainer className="lg:hidden space-y-3">
             {members.map((member) => {
               const memberOb = getOpeningBalance(openingBalances, member.id);
-              const net = calculateMemberNet(
-                activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-                member.id,
-                memberOb,
-              );
+              const net = memberNetByMember.get(member.id) ?? 0;
               const receivable = Math.max(0, -net);
-              const memberFyDeposited = fyTransactions
-                .filter((t) => t.memberId === member.id && t.type === "deposit")
-                .reduce((sum, t) => sum + t.amount, 0);
-              const memberFyWithdrawn = fyTransactions
-                .filter(
-                  (t) => t.memberId === member.id && t.type === "withdrawal",
-                )
-                .reduce((sum, t) => sum + t.amount, 0);
-              const memberFyReturned = fyTransactions
-                .filter((t) => t.memberId === member.id && t.type === "return")
-                .reduce((sum, t) => sum + t.amount, 0);
+              const stats = memberStats.get(member.id) ?? {
+                dep: 0,
+                wd: 0,
+                ret: 0,
+                int: 0,
+              };
               const memberFyNetWithdrawn = Math.max(
                 0,
-                memberFyWithdrawn - memberFyReturned,
+                stats.wd - stats.ret,
               );
 
               return (
@@ -501,7 +567,7 @@ export function DashboardPage() {
                     net={net}
                     receivable={receivable}
                     previousBal={memberOb}
-                    fyDeposited={memberFyDeposited}
+                    fyDeposited={stats.dep}
                     fyWithdrawn={memberFyNetWithdrawn}
                     fyTarget={fyTarget}
                   />
@@ -529,41 +595,23 @@ export function DashboardPage() {
                 </TableHeader>
                 <TableBody>
                   {members.map((member) => {
-                    const net = calculateMemberNet(
-                      activeTransactions.map((t) => ({
-                        ...t,
-                        memberId: t.memberId,
-                      })),
-                      member.id,
-                      getOpeningBalance(openingBalances, member.id),
-                    );
-                    const receivable = Math.max(0, -net);
                     const memberOb = getOpeningBalance(
                       openingBalances,
                       member.id,
                     );
-                    const memberFyDeposited = fyTransactions
-                      .filter(
-                        (t) => t.memberId === member.id && t.type === "deposit",
-                      )
-                      .reduce((sum, t) => sum + t.amount, 0);
-                    const memberFyWithdrawnRaw = fyTransactions
-                      .filter(
-                        (t) =>
-                          t.memberId === member.id && t.type === "withdrawal",
-                      )
-                      .reduce((sum, t) => sum + t.amount, 0);
-                    const memberFyReturned = fyTransactions
-                      .filter(
-                        (t) => t.memberId === member.id && t.type === "return",
-                      )
-                      .reduce((sum, t) => sum + t.amount, 0);
+                    const net = memberNetByMember.get(member.id) ?? 0;
+                    const receivable = Math.max(0, -net);
+                    const stats = memberStats.get(member.id) ?? {
+                      dep: 0,
+                      wd: 0,
+                      ret: 0,
+                      int: 0,
+                    };
                     const memberFyNetWithdrawn = Math.max(
                       0,
-                      memberFyWithdrawnRaw - memberFyReturned,
+                      stats.wd - stats.ret,
                     );
-                    const memberFyNetBalance =
-                      memberFyDeposited - memberFyNetWithdrawn;
+                    const memberFyNetBalance = stats.dep - memberFyNetWithdrawn;
                     const progressPct =
                       fyTarget > 0
                         ? Math.max(
@@ -598,12 +646,12 @@ export function DashboardPage() {
                         <TableCell
                           className={cn(
                             "text-right",
-                            memberFyDeposited > 0
+                            stats.dep > 0
                               ? "text-emerald-600 dark:text-emerald-400"
                               : "text-muted-foreground/60",
                           )}
                         >
-                          {formatINR(memberFyDeposited)}
+                          {formatINR(stats.dep)}
                         </TableCell>
                         <TableCell
                           className={cn(

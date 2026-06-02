@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, memo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   collection,
@@ -36,17 +36,29 @@ import {
   getCurrentFY,
   getTotalOpeningBalance,
 } from "@/utils/financialYear";
+import { compressQRImage } from "@/utils/compressImage";
 import type { MemberDoc, UserDoc, AppConfig } from "@/types";
 import { toast } from "sonner";
 
-import {
-  StaggerContainer,
-  StaggerItem,
-  TapScale,
-} from "@/components/animations/PageTransition";
-import { EditMemberDialog } from "@/components/transactions/EditMemberDialog";
-import { AddMemberDialog } from "@/components/transactions/AddMemberDialog";
-import { SetOpeningBalanceDialog } from "@/components/transactions/SetOpeningBalanceDialog";
+import { StaggerContainer, StaggerItem, TapScale } from "@/components/animations/PageTransition";
+
+// Maintainer-only dialogs: defer their form code (zod, react-hook-form,
+// opening-balance queries) until the user actually opens one.
+const EditMemberDialog = lazy(() =>
+  import("@/components/transactions/EditMemberDialog").then((m) => ({
+    default: m.EditMemberDialog,
+  })),
+);
+const AddMemberDialog = lazy(() =>
+  import("@/components/transactions/AddMemberDialog").then((m) => ({
+    default: m.AddMemberDialog,
+  })),
+);
+const SetOpeningBalanceDialog = lazy(() =>
+  import("@/components/transactions/SetOpeningBalanceDialog").then((m) => ({
+    default: m.SetOpeningBalanceDialog,
+  })),
+);
 import {
   CreditCard,
   Users,
@@ -71,8 +83,9 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { Switch } from "@/components/ui/switch";
 import type { TransactionType } from "@/types";
 
-// Settings Section Card — defined outside SettingsPage to avoid re-mount on state change
-function SettingsSection({
+// Settings Section Card. Memoized so toggling one notification switch
+// does not re-render every other section.
+const SettingsSection = memo(function SettingsSection({
   title,
   description,
   icon: Icon,
@@ -101,10 +114,11 @@ function SettingsSection({
       <CardContent>{children}</CardContent>
     </Card>
   );
-}
+});
 
-// Mobile Member Card — defined outside SettingsPage to avoid re-mount on state change
-function MemberCard({
+// Mobile Member Card in Settings list. Memoized so toggling one
+// member's status does not re-render every other member card.
+const MemberCard = memo(function MemberCard({
   member,
   onEdit,
   onToggle,
@@ -189,7 +203,7 @@ function MemberCard({
       </CardContent>
     </Card>
   );
-}
+});
 
 export function SettingsPage() {
   const { user, isMaintainer } = useAuth();
@@ -259,26 +273,44 @@ export function SettingsPage() {
 
     if (file.size > 1024 * 1024) {
       toast.error("Image too large. Please use an image under 1MB.");
+      // Reset the input so the same file can be re-selected after handling.
+      e.target.value = "";
       return;
     }
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64 = event.target?.result as string;
+      // Compress the QR client-side before storing. QR codes are simple
+      // high-contrast images, so a 300x300 JPEG at 0.8 quality is more
+      // than sharp enough for scanning and keeps the Firestore config
+      // doc small (well under 60 KB instead of the previous multi-MB
+      // base64 PNGs that ate reads and the 1 MiB doc cap).
+      const compressed = await compressQRImage(file);
+      // `compressed` is a `data:image/jpeg;base64,...` URL. The base64
+      // payload length is `Math.ceil((len * 3) / 4)` bytes after the
+      // comma. 60 KB is a hard cap to keep `config/app` doc small.
+      const base64Payload = compressed.split(",", 2)[1] ?? "";
+      const decodedBytes = Math.ceil((base64Payload.length * 3) / 4);
+      if (decodedBytes > 60 * 1024) {
+        toast.error(
+          `Compressed QR is still ${Math.round(decodedBytes / 1024)} KB. Use a simpler QR image.`,
+        );
+        e.target.value = "";
+        return;
+      }
 
-        await updateDoc(doc(db, "config", "app"), {
-          qrUrl: base64,
-          updatedAt: serverTimestamp(),
-          updatedByUid: user!.uid,
-        });
+      await updateDoc(doc(db, "config", "app"), {
+        qrUrl: compressed,
+        updatedAt: serverTimestamp(),
+        updatedByUid: user!.uid,
+      });
 
-        toast.success("QR code uploaded");
-        queryClient.invalidateQueries({ queryKey: ["config"] });
-      };
-      reader.readAsDataURL(file);
+      toast.success("QR code uploaded");
+      queryClient.invalidateQueries({ queryKey: ["config"] });
     } catch (error: any) {
       toast.error(error.message || "Failed to upload QR");
+    } finally {
+      // Allow re-uploading the same file after a fix.
+      e.target.value = "";
     }
   };
 
@@ -896,25 +928,31 @@ export function SettingsPage() {
       </div>
 
       {/* Add Member Dialog */}
-      <AddMemberDialog
-        open={isAddingMember}
-        onClose={() => setIsAddingMember(false)}
-      />
+      <Suspense fallback={null}>
+        <AddMemberDialog
+          open={isAddingMember}
+          onClose={() => setIsAddingMember(false)}
+        />
+      </Suspense>
 
       {/* Edit Member Dialog */}
       {editingMember && (
-        <EditMemberDialog
-          member={editingMember}
-          open
-          onClose={() => setEditingMember(null)}
-        />
+        <Suspense fallback={null}>
+          <EditMemberDialog
+            member={editingMember}
+            open
+            onClose={() => setEditingMember(null)}
+          />
+        </Suspense>
       )}
 
       {/* Set Previous Balance Dialog */}
-      <SetOpeningBalanceDialog
-        open={isOpeningBalanceOpen}
-        onClose={() => setIsOpeningBalanceOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <SetOpeningBalanceDialog
+          open={isOpeningBalanceOpen}
+          onClose={() => setIsOpeningBalanceOpen(false)}
+        />
+      </Suspense>
     </AppLayout>
   );
 }
