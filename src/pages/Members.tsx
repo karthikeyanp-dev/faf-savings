@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { memo, useCallback, useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { getAllActiveTransactions, getTransactionsByFY, getTransactionsByMember } from '@/lib/firestore';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,9 +11,7 @@ import { Button } from '@/components/ui/button';
 import {
   formatINR,
   getCurrentFY,
-  calculateMemberNet,
   calculateFYTarget,
-  getOpeningBalance,
 } from '@/utils/financialYear';
 import type { AppConfig, MemberDoc, TransactionDoc } from '@/types';
 import { Search, Filter, X, ChevronRight } from 'lucide-react';
@@ -21,10 +20,12 @@ import { Input } from '@/components/ui/input';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
 
-// Mobile Member Card - tappable to navigate to member detail
-function MemberCard({
+// Mobile Member Card - tappable to navigate to member detail.
+// Wrapped in React.memo so search/filter input changes do not re-render
+// every member card. With 50+ members this is the biggest cost.
+const MemberCard = memo(function MemberCard({
   member,
   net,
   receivable,
@@ -32,6 +33,7 @@ function MemberCard({
   fyWithdrawn,
   fyTarget,
   onClick,
+  onPrefetch,
 }: {
   member: MemberDoc;
   net: number;
@@ -40,17 +42,20 @@ function MemberCard({
   fyWithdrawn: number;
   fyTarget: number;
   onClick: () => void;
+  onPrefetch: () => void;
 }) {
   const fyNetBalance = fyDeposited - fyWithdrawn;
   const progressPct = fyTarget > 0 ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100))) : 0;
 
   return (
-    <motion.div
+    <m.div
       whileTap={{ scale: 0.98 }}
       whileHover={{ scale: 1.01 }}
       transition={{ type: "spring", stiffness: 400, damping: 20 }}
       className="w-full cursor-pointer"
       onClick={onClick}
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
     >
       <Card className="bg-muted/30 hover:bg-muted/50 transition-colors">
         <CardContent className="p-4">
@@ -113,18 +118,35 @@ function MemberCard({
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </m.div>
   );
-}
+});
 
 export function MembersPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const currentFY = getCurrentFY();
   const fyTarget = calculateFYTarget(currentFY);
+
+  // Prefetch a member's transaction history on hover/focus. By the
+  // time the user actually taps through, the query is usually already
+  // cached and the detail page shows instantly.
+  const prefetchMember = useCallback(
+    (memberId: string) => {
+      queryClient.prefetchQuery({
+        queryKey: ['transactions', 'member', memberId],
+        queryFn: async () => {
+          const snap = await getDocs(getTransactionsByMember(memberId));
+          return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TransactionDoc);
+        },
+      });
+    },
+    [queryClient],
+  );
 
   const { data: members = [] } = useQuery({
     queryKey: ['members'],
@@ -135,9 +157,17 @@ export function MembersPage() {
   });
 
   const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['transactions', 'all-active'],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'transactions'));
+      const snap = await getDocs(getAllActiveTransactions());
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as TransactionDoc));
+    },
+  });
+
+  const { data: fyTransactions = [] } = useQuery({
+    queryKey: ['transactions', 'fy', currentFY],
+    queryFn: async () => {
+      const snap = await getDocs(getTransactionsByFY(currentFY));
       return snap.docs.map((d) => ({ id: d.id, ...d.data() } as TransactionDoc));
     },
   });
@@ -150,9 +180,53 @@ export function MembersPage() {
     },
   });
 
-  const activeTransactions = transactions.filter((t) => t.status === 'active');
-  const fyTransactions = activeTransactions.filter((t) => t.fy === currentFY);
+  const activeTransactions = transactions;
   const openingBalances = config?.openingBalances;
+
+  // Per-member FY aggregates. One pass over fyTransactions keyed by
+  // memberId, so each card/row can do an O(1) lookup instead of repeating
+  // a 4-pass filter().reduce() inside the JSX.
+  const memberStats = useMemo(() => {
+    const map = new Map<
+      string,
+      { dep: number; wd: number; ret: number; int: number }
+    >();
+    for (const t of fyTransactions) {
+      if (!t.memberId) continue;
+      const s = map.get(t.memberId) ?? { dep: 0, wd: 0, ret: 0, int: 0 };
+      if (t.type === 'deposit') s.dep += t.amount;
+      else if (t.type === 'withdrawal') s.wd += t.amount;
+      else if (t.type === 'return') s.ret += t.amount;
+      else if (t.type === 'interest') s.int += t.amount;
+      map.set(t.memberId, s);
+    }
+    return map;
+  }, [fyTransactions]);
+
+  // Lifetime net per member, including opening balances. The previous
+  // implementation called calculateMemberNet() per row which iterated the
+  // full transaction list 50 times.
+  const memberNetByMember = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of activeTransactions) {
+      if (!t.memberId) continue;
+      const prev = map.get(t.memberId) ?? 0;
+      if (t.type === 'deposit' || t.type === 'return') {
+        map.set(t.memberId, prev + t.amount);
+      } else if (t.type === 'withdrawal') {
+        map.set(t.memberId, prev - t.amount);
+      }
+    }
+    if (openingBalances) {
+      for (const [memberId, amount] of Object.entries(openingBalances)) {
+        map.set(memberId, (map.get(memberId) ?? 0) + amount);
+      }
+    }
+    for (const m of members) {
+      if (!map.has(m.id)) map.set(m.id, 0);
+    }
+    return map;
+  }, [activeTransactions, members, openingBalances]);
 
   // Filter members
   const filteredMembers = members
@@ -161,9 +235,16 @@ export function MembersPage() {
       if (statusFilter === 'inactive') return !m.active;
       return true;
     })
-    .filter((m) => 
-      searchQuery === '' || m.name.toLowerCase().includes(searchQuery.toLowerCase())
+    .filter((m) =>
+      searchQuery === '' || m.name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
+
+  // Stable handler factory so memoized cards don't re-render when a
+  // sibling's onClick identity changes.
+  const goToMember = useCallback(
+    (memberId: string) => navigate(`/members/${memberId}`),
+    [navigate],
+  );
 
   return (
     <AppLayout>
@@ -240,29 +321,25 @@ export function MembersPage() {
         {/* Mobile: Card List */}
         <StaggerContainer className="lg:hidden space-y-3">
           {filteredMembers.map((member) => {
-            const net = calculateMemberNet(
-              activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-              member.id,
-              getOpeningBalance(openingBalances, member.id)
-            );
+            const net = memberNetByMember.get(member.id) ?? 0;
             const receivable = Math.max(0, -net);
-            const memberFyDeposited = fyTransactions
-              .filter((t) => t.memberId === member.id && t.type === 'deposit')
-              .reduce((sum, t) => sum + t.amount, 0);
-            const memberFyWithdrawn = fyTransactions
-              .filter((t) => t.memberId === member.id && t.type === 'withdrawal')
-              .reduce((sum, t) => sum + t.amount, 0);
-
+            const stats = memberStats.get(member.id) ?? {
+              dep: 0,
+              wd: 0,
+              ret: 0,
+              int: 0,
+            };
             return (
               <StaggerItem key={member.id}>
                 <MemberCard
                   member={member}
                   net={net}
                   receivable={receivable}
-                  fyDeposited={memberFyDeposited}
-                  fyWithdrawn={memberFyWithdrawn}
+                  fyDeposited={stats.dep}
+                  fyWithdrawn={stats.wd}
                   fyTarget={fyTarget}
-                  onClick={() => navigate(`/members/${member.id}`)}
+                  onClick={() => goToMember(member.id)}
+                  onPrefetch={() => prefetchMember(member.id)}
                 />
               </StaggerItem>
             );
@@ -286,30 +363,24 @@ export function MembersPage() {
               </TableHeader>
               <TableBody>
                 {filteredMembers.map((member) => {
-                  const net = calculateMemberNet(
-                    activeTransactions.map((t) => ({ ...t, memberId: t.memberId })),
-                    member.id,
-                    getOpeningBalance(openingBalances, member.id)
-                  );
+                  const net = memberNetByMember.get(member.id) ?? 0;
                   const receivable = Math.max(0, -net);
-                  const memberFyDeposited = fyTransactions
-                    .filter((t) => t.memberId === member.id && t.type === 'deposit')
-                    .reduce((sum, t) => sum + t.amount, 0);
-                  const memberFyWithdrawnRaw = fyTransactions
-                    .filter((t) => t.memberId === member.id && t.type === 'withdrawal')
-                    .reduce((sum, t) => sum + t.amount, 0);
-                  const memberFyReturned = fyTransactions
-                    .filter((t) => t.memberId === member.id && t.type === 'return')
-                    .reduce((sum, t) => sum + t.amount, 0);
-                  const memberFyNetWithdrawn = Math.max(0, memberFyWithdrawnRaw - memberFyReturned);
-                  const memberFyNetBalance = memberFyDeposited - memberFyNetWithdrawn;
+                  const stats = memberStats.get(member.id) ?? {
+                    dep: 0,
+                    wd: 0,
+                    ret: 0,
+                    int: 0,
+                  };
+                  const memberFyNetWithdrawn = Math.max(0, stats.wd - stats.ret);
+                  const memberFyNetBalance = stats.dep - memberFyNetWithdrawn;
                   const progressPct = fyTarget > 0 ? Math.max(0, Math.min(100, Math.round((memberFyNetBalance / fyTarget) * 100))) : 0;
 
                   return (
-                    <TableRow 
-                      key={member.id} 
+                    <TableRow
+                      key={member.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => navigate(`/members/${member.id}`)}
+                      onClick={() => goToMember(member.id)}
+                      onMouseEnter={() => prefetchMember(member.id)}
                     >
                       <TableCell className="font-medium">
                         <span className="bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
@@ -325,7 +396,7 @@ export function MembersPage() {
                         {formatINR(net)}
                       </TableCell>
                       <TableCell className="text-right">{formatINR(receivable)}</TableCell>
-                      <TableCell className="text-right">{formatINR(memberFyDeposited)}</TableCell>
+                      <TableCell className="text-right">{formatINR(stats.dep)}</TableCell>
                       <TableCell className="text-right">{formatINR(fyTarget)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">

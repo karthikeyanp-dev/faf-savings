@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/providers/AuthProvider";
 import { logout } from "@/lib/auth";
 import { getCurrentFY } from "@/utils/financialYear";
@@ -64,14 +64,14 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
 
           {/* Right Actions */}
           {showMenu && (
-            <motion.button
+            <m.button
               whileTap={{ scale: 0.9 }}
               onClick={() => setMenuOpen(true)}
               className="p-2.5 rounded-xl hover:bg-muted active:bg-muted/80 transition-colors"
               aria-label="Menu"
             >
               <MoreVertical className="h-5 w-5" />
-            </motion.button>
+            </m.button>
           )}
         </div>
       </header>
@@ -81,7 +81,7 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
         {menuOpen && (
           <>
             {/* Backdrop */}
-            <motion.div
+            <m.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -90,7 +90,7 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
             />
 
             {/* Menu Panel */}
-            <motion.div
+            <m.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
@@ -104,13 +104,13 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
               {/* Menu Header */}
               <div className="flex items-center justify-between p-5 border-b border-border/50">
                 <h2 className="text-lg font-bold">Menu</h2>
-                <motion.button
+                <m.button
                   whileTap={{ scale: 0.9 }}
                   onClick={() => setMenuOpen(false)}
                   className="p-2.5 rounded-xl hover:bg-muted transition-colors"
                 >
                   <X className="h-5 w-5" />
-                </motion.button>
+                </m.button>
               </div>
 
               {/* User Info */}
@@ -152,7 +152,7 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
               {/* Menu Items */}
               <div className="p-3 space-y-1">
                 {/* Dark Mode Toggle */}
-                <motion.button
+                <m.button
                   whileTap={{ scale: 0.98 }}
                   onClick={toggleDarkMode}
                   className="w-full flex items-center gap-4 px-3 py-3.5 rounded-xl hover:bg-muted transition-colors"
@@ -175,13 +175,13 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
                     {darkMode ? "Light Mode" : "Dark Mode"}
                   </span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </motion.button>
+                </m.button>
 
                 {/* Divider */}
                 <div className="h-px bg-border/50 my-2" />
 
                 {/* Logout */}
-                <motion.button
+                <m.button
                   whileTap={{ scale: 0.98 }}
                   onClick={handleLogout}
                   className="w-full flex items-center gap-4 px-3 py-3.5 rounded-xl hover:bg-destructive/10 text-destructive transition-colors"
@@ -191,7 +191,7 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
                   </div>
                   <span className="font-medium flex-1 text-left">Logout</span>
                   <ChevronRight className="h-4 w-4 opacity-50" />
-                </motion.button>
+                </m.button>
               </div>
 
               {/* App Info */}
@@ -205,7 +205,7 @@ export function MobileHeader({ title, showMenu = true }: MobileHeaderProps) {
                   </p>
                 </div>
               </div>
-            </motion.div>
+            </m.div>
           </>
         )}
       </AnimatePresence>
@@ -236,7 +236,7 @@ export function CompactHeader({
     >
       <div className="flex items-center px-4 h-16 gap-3">
         {showBack && (
-          <motion.button
+          <m.button
             whileTap={{ scale: 0.9 }}
             onClick={onBack || (() => navigate(-1))}
             className="p-2.5 -ml-2 rounded-xl hover:bg-muted transition-colors"
@@ -254,7 +254,7 @@ export function CompactHeader({
                 d="M15 19l-7-7 7-7"
               />
             </svg>
-          </motion.button>
+          </m.button>
         )}
         <h1 className="text-lg font-bold tracking-tight flex-1">{title}</h1>
         {rightAction && <div className="flex items-center">{rightAction}</div>}
