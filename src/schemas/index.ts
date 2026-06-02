@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const transactionSchema = z
   .object({
-    type: z.enum(["deposit", "withdrawal", "return", "opening_balance", "interest"]),
+    type: z.enum(["deposit", "withdrawal", "repayment", "borrow", "payout", "opening_balance", "interest"]),
     memberId: z.string().min(1, "Member is required").optional(),
     amount: z.coerce.number(),
     date: z.date(),

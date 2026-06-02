@@ -128,9 +128,11 @@ async function cleanup() {
     await db.collection('stats').doc('current').set({
       poolBalance: 0,
       totalDeposit: 0,
-      totalReturn: 0,
+      totalRepayment: 0,
       totalWithdrawal: 0,
+      totalBorrow: 0,
       totalInterest: 0,
+      totalPayout: 0,
       updatedAt: new Date(),
     });
     console.log('  ✓ Stats reset to zero');

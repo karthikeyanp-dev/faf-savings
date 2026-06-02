@@ -887,7 +887,9 @@ export function SettingsPage() {
                           {([
                             ['deposit', 'Deposits', 'Money added to the pool'],
                             ['withdrawal', 'Withdrawals', 'Money taken from the pool'],
-                            ['return', 'Returns', 'Funds returned to members'],
+                            ['repayment', 'Repayments', 'Borrowed/withdrawn funds returned'],
+                            ['borrow', 'Borrows', 'Money borrowed from the pool'],
+                            ['payout', 'Payouts', 'Full balance returned to member'],
                             ['interest', 'Interest', 'Interest added to pool balance'],
                             ['opening_balance', 'Balance Updates', 'Previous balance adjustments'],
                           ] as [TransactionType, string, string][]).map(([type, label, desc]) => (
