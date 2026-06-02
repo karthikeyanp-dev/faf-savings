@@ -1,6 +1,12 @@
 import { Timestamp } from 'firebase/firestore';
 import type { TransactionType } from '../types';
 
+/** Maps legacy type values to current ones. Handles old 'return' → 'repayment'. */
+export function normalizeTransactionType(type: string): TransactionType {
+  if (type === 'return') return 'repayment';
+  return type as TransactionType;
+}
+
 export function getFY(date: Date, fyStartMonth = 4): string {
   const month = date.getMonth() + 1;
   const year = date.getFullYear();
@@ -32,13 +38,14 @@ export function calculatePoolBalance(
   return transactions
     .filter(t => t.status === 'active')
     .reduce((sum, t) => {
-      if (t.type === 'deposit' || t.type === 'return' || t.type === 'interest') {
+      const type = normalizeTransactionType(t.type);
+      if (type === 'deposit' || type === 'repayment' || type === 'interest') {
         return sum + t.amount;
       }
-      if (t.type === 'withdrawal') {
+      if (type === 'withdrawal' || type === 'borrow' || type === 'payout') {
         return sum - t.amount;
       }
-      return sum;
+      return sum; // opening_balance skipped (handled via param)
     }, openingBalanceTotal + openingInterest);
 }
 
@@ -50,8 +57,9 @@ export function calculateMemberNet(
   return transactions
     .filter(t => t.status === 'active' && t.memberId === memberId)
     .reduce((sum, t) => {
-      if (t.type === 'deposit' || t.type === 'return') return sum + t.amount;
-      if (t.type === 'withdrawal') return sum - t.amount;
+      const type = normalizeTransactionType(t.type);
+      if (type === 'deposit' || type === 'repayment') return sum + t.amount;
+      if (type === 'withdrawal' || type === 'borrow' || type === 'payout') return sum - t.amount;
       return sum;
     }, openingBalance);
 }

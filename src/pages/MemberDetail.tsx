@@ -30,22 +30,12 @@ import { cn } from "@/lib/utils";
 
 const txTypeConfig = {
   deposit: { label: "Deposit", color: "bg-green-500", icon: ArrowUpRight },
-  withdrawal: {
-    label: "Withdrawal",
-    color: "bg-orange-500",
-    icon: ArrowDownRight,
-  },
-  return: { label: "Return", color: "bg-blue-500", icon: RotateCcw },
-  opening_balance: {
-    label: "Previous Balance",
-    color: "bg-purple-500",
-    icon: Wallet,
-  },
-  interest: {
-    label: "Interest",
-    color: "bg-amber-500",
-    icon: TrendingUp,
-  },
+  withdrawal: { label: "Withdrawal", color: "bg-orange-500", icon: ArrowDownRight },
+  repayment: { label: "Repayment", color: "bg-blue-500", icon: RotateCcw },
+  borrow: { label: "Borrow", color: "bg-red-500", icon: ArrowDownRight },
+  payout: { label: "Payout", color: "bg-indigo-500", icon: Wallet },
+  opening_balance: { label: "Previous Balance", color: "bg-purple-500", icon: Wallet },
+  interest: { label: "Interest", color: "bg-amber-500", icon: TrendingUp },
 };
 
 // Transaction history row. Memoized so unrelated parent state changes
@@ -159,21 +149,23 @@ export function MemberDetailPage() {
     let net = 0;
     for (const t of transactions) {
       if (t.status === "active") {
-        if (t.type === "deposit") {
+        const type = (t as any).type === "return" ? "repayment" : t.type;
+        if (type === "deposit") {
           totalDeposit += t.amount;
           net += t.amount;
-        } else if (t.type === "return") {
+        } else if (type === "repayment") {
           totalReturn += t.amount;
           net += t.amount;
-        } else if (t.type === "withdrawal") {
+        } else if (type === "withdrawal" || type === "borrow" || type === "payout") {
           totalWithdrawal += t.amount;
           net -= t.amount;
         }
       }
       if (t.fy === currentFY && t.status === "active") {
-        if (t.type === "deposit") fyDeposited += t.amount;
-        else if (t.type === "withdrawal") fyWithdrawnRaw += t.amount;
-        else if (t.type === "return") fyReturned += t.amount;
+        const type = (t as any).type === "return" ? "repayment" : t.type;
+        if (type === "deposit") fyDeposited += t.amount;
+        else if (type === "withdrawal") fyWithdrawnRaw += t.amount;
+        else if (type === "repayment") fyReturned += t.amount;
       }
     }
     return {

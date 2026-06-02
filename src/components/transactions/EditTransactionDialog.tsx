@@ -38,7 +38,7 @@ function EditFormContent({
       <div>
         <Label className="text-sm font-medium">Transaction Type</Label>
         <div className="grid grid-cols-3 gap-2 mt-1.5">
-          {['deposit', 'return', 'withdrawal'].map((type) => (
+          {(["deposit", "repayment", "withdrawal", "borrow", "payout", "interest"] as const).map((type) => (
             <button
               key={type}
               type="button"
@@ -78,7 +78,7 @@ function EditFormContent({
         />
       </div>
 
-      {(txType === 'deposit' || txType === 'return') && (
+      {(txType === 'deposit' || txType === 'repayment') && (
         <div>
           <Label className="text-sm font-medium">Savings Month</Label>
           <Input type="month" {...register('savingsMonth')} className="mt-1.5" />

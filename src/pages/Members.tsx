@@ -194,10 +194,11 @@ export function MembersPage() {
     for (const t of fyTransactions) {
       if (!t.memberId) continue;
       const s = map.get(t.memberId) ?? { dep: 0, wd: 0, ret: 0, int: 0 };
-      if (t.type === 'deposit') s.dep += t.amount;
-      else if (t.type === 'withdrawal') s.wd += t.amount;
-      else if (t.type === 'return') s.ret += t.amount;
-      else if (t.type === 'interest') s.int += t.amount;
+      const type = (t as any).type === 'return' ? 'repayment' : t.type;
+      if (type === 'deposit') s.dep += t.amount;
+      else if (type === 'withdrawal') s.wd += t.amount;
+      else if (type === 'repayment') s.ret += t.amount;
+      else if (type === 'interest') s.int += t.amount;
       map.set(t.memberId, s);
     }
     return map;
@@ -211,9 +212,10 @@ export function MembersPage() {
     for (const t of activeTransactions) {
       if (!t.memberId) continue;
       const prev = map.get(t.memberId) ?? 0;
-      if (t.type === 'deposit' || t.type === 'return') {
+      const type = (t as any).type === 'return' ? 'repayment' : t.type;
+      if (type === 'deposit' || type === 'repayment') {
         map.set(t.memberId, prev + t.amount);
-      } else if (t.type === 'withdrawal') {
+      } else if (type === 'withdrawal' || type === 'borrow' || type === 'payout') {
         map.set(t.memberId, prev - t.amount);
       }
     }

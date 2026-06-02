@@ -53,11 +53,23 @@ const txTypeConfig = {
     icon: ArrowDownRight,
     badge: 'destructive' as const
   },
-  return: { 
-    label: 'Return', 
+  repayment: { 
+    label: 'Repayment', 
     color: 'bg-blue-500', 
     icon: RotateCcw,
     badge: 'secondary' as const
+  },
+  borrow: { 
+    label: 'Borrow', 
+    color: 'bg-red-500', 
+    icon: ArrowDownRight,
+    badge: 'destructive' as const
+  },
+  payout: { 
+    label: 'Payout', 
+    color: 'bg-indigo-500', 
+    icon: Wallet,
+    badge: 'outline' as const
   },
   opening_balance: {
     label: 'Previous',

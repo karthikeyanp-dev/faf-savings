@@ -40,6 +40,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Percent,
+  RotateCcw,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { m } from "framer-motion";
@@ -96,11 +97,17 @@ const FYStatsCard = memo(function FYStatsCard({
   fy,
   deposited,
   withdrawn,
+  repaid,
+  borrowed,
+  payout,
   interests,
 }: {
   fy: string;
   deposited: number;
   withdrawn: number;
+  repaid: number;
+  borrowed: number;
+  payout: number;
   interests: number;
 }) {
   const rows = [
@@ -115,6 +122,24 @@ const FYStatsCard = memo(function FYStatsCard({
       value: withdrawn,
       icon: ArrowUpFromLine,
       tint: "text-rose-200",
+    },
+    {
+      label: "Repaid",
+      value: repaid,
+      icon: RotateCcw,
+      tint: "text-blue-200",
+    },
+    {
+      label: "Borrowed",
+      value: borrowed,
+      icon: ArrowUpFromLine,
+      tint: "text-red-200",
+    },
+    {
+      label: "Payout",
+      value: payout,
+      icon: ArrowUpFromLine,
+      tint: "text-indigo-200",
     },
     {
       label: "Interests",
@@ -355,36 +380,34 @@ export function DashboardPage() {
   // early-return below. They produce empty maps when their source data
   // is still loading, which is fine.
   const memberStats = useMemo(() => {
-    // One pass over fyTransactions. Per-member running totals for
-    // deposits, withdrawals, returns, and interest. The plan's
-    // {dep, wd, ret, int} shape.
     const map = new Map<
       string,
-      { dep: number; wd: number; ret: number; int: number }
+      { dep: number; wd: number; rep: number; bor: number; pay: number; int: number }
     >();
     for (const t of fyTransactions) {
       if (!t.memberId) continue;
-      const s = map.get(t.memberId) ?? { dep: 0, wd: 0, ret: 0, int: 0 };
-      if (t.type === "deposit") s.dep += t.amount;
-      else if (t.type === "withdrawal") s.wd += t.amount;
-      else if (t.type === "return") s.ret += t.amount;
-      else if (t.type === "interest") s.int += t.amount;
+      const s = map.get(t.memberId) ?? { dep: 0, wd: 0, rep: 0, bor: 0, pay: 0, int: 0 };
+      const type = (t as any).type === "return" ? "repayment" : t.type;
+      if (type === "deposit") s.dep += t.amount;
+      else if (type === "withdrawal") s.wd += t.amount;
+      else if (type === "repayment") s.rep += t.amount;
+      else if (type === "borrow") s.bor += t.amount;
+      else if (type === "payout") s.pay += t.amount;
+      else if (type === "interest") s.int += t.amount;
       map.set(t.memberId, s);
     }
     return map;
   }, [fyTransactions]);
 
   const memberNetByMember = useMemo(() => {
-    // Lifetime net per member (used for the per-member Balance column).
-    // Computed in one pass over all active transactions, then seeded with
-    // opening balances from config.
     const map = new Map<string, number>();
     for (const t of transactions) {
       if (!t.memberId) continue;
       const prev = map.get(t.memberId) ?? 0;
-      if (t.type === "deposit" || t.type === "return") {
+      const type = (t as any).type === "return" ? "repayment" : t.type;
+      if (type === "deposit" || type === "repayment") {
         map.set(t.memberId, prev + t.amount);
-      } else if (t.type === "withdrawal") {
+      } else if (type === "withdrawal" || type === "borrow" || type === "payout") {
         map.set(t.memberId, prev - t.amount);
       }
     }
@@ -393,7 +416,6 @@ export function DashboardPage() {
         map.set(memberId, (map.get(memberId) ?? 0) + amount);
       }
     }
-    // Ensure every member has an entry (default 0) so the JSX is uniform.
     for (const m of members) {
       if (!map.has(m.id)) map.set(m.id, 0);
     }
@@ -431,6 +453,15 @@ export function DashboardPage() {
     .reduce((sum, t) => sum + t.amount, 0);
   const fyInterest = fyTransactions
     .filter((t) => t.type === "interest")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const fyRepaid = fyTransactions
+    .filter((t) => t.type === "repayment" || (t as any).type === "return")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const fyBorrowed = fyTransactions
+    .filter((t) => t.type === "borrow")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const fyPayout = fyTransactions
+    .filter((t) => t.type === "payout")
     .reduce((sum, t) => sum + t.amount, 0);
   const totalInterestsEarned = totalInterest + openingInterest;
 
@@ -514,6 +545,9 @@ export function DashboardPage() {
                 fy={currentFY}
                 deposited={fyDeposited}
                 withdrawn={fyWithdrawn}
+                repaid={fyRepaid}
+                borrowed={fyBorrowed}
+                payout={fyPayout}
                 interests={fyInterest}
               />
             </m.div>
@@ -552,12 +586,14 @@ export function DashboardPage() {
               const stats = memberStats.get(member.id) ?? {
                 dep: 0,
                 wd: 0,
-                ret: 0,
+                rep: 0,
+                bor: 0,
+                pay: 0,
                 int: 0,
               };
               const memberFyNetWithdrawn = Math.max(
                 0,
-                stats.wd - stats.ret,
+                stats.wd - stats.rep,
               );
 
               return (
@@ -604,12 +640,14 @@ export function DashboardPage() {
                     const stats = memberStats.get(member.id) ?? {
                       dep: 0,
                       wd: 0,
-                      ret: 0,
+                      rep: 0,
+                      bor: 0,
+                      pay: 0,
                       int: 0,
                     };
                     const memberFyNetWithdrawn = Math.max(
                       0,
-                      stats.wd - stats.ret,
+                      stats.wd - stats.rep,
                     );
                     const memberFyNetBalance = stats.dep - memberFyNetWithdrawn;
                     const progressPct =

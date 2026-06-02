@@ -36,7 +36,7 @@ service cloud.firestore {
                          ? request.resource.data.amount is number
                          : request.resource.data.amount > 0 &&
                            get(/databases/$(database)/documents/stats/current).data.poolBalance +
-                           (request.resource.data.type in ['deposit', 'return']
+                           (request.resource.data.type in ['deposit', 'repayment', 'interest']
                              ? request.resource.data.amount
                              : -request.resource.data.amount) >= 0);
       

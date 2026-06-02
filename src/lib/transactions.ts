@@ -41,14 +41,14 @@ export async function createTransaction(params: CreateTransactionParams) {
 
     // Calculate balance delta
     // opening_balance: amount can be positive or negative
-    // deposit/return/interest: always positive amount, adds to pool
-    // withdrawal: always positive amount, subtracts from pool
+    // deposit/repayment/interest: always positive amount, adds to pool
+    // withdrawal/borrow/payout: always positive amount, subtracts from pool
     let balanceDelta = 0;
-    if (type === "deposit" || type === "return") {
+    if (type === "deposit" || type === "repayment") {
       balanceDelta = amount;
     } else if (type === "opening_balance" || type === "interest") {
       balanceDelta = amount; // can be positive or negative
-    } else if (type === "withdrawal") {
+    } else if (type === "withdrawal" || type === "borrow" || type === "payout") {
       balanceDelta = -amount;
     }
 
@@ -90,14 +90,20 @@ export async function createTransaction(params: CreateTransactionParams) {
     if (type === "deposit" || type === "opening_balance") {
       updates.totalDeposit = (stats.totalDeposit || 0) + amount;
     }
-    if (type === "return") {
-      updates.totalReturn = (stats.totalReturn || 0) + amount;
+    if (type === "repayment") {
+      updates.totalRepayment = ((stats as any).totalRepayment ?? (stats as any).totalReturn ?? 0) + amount;
     }
     if (type === "withdrawal") {
       updates.totalWithdrawal = (stats.totalWithdrawal || 0) + amount;
     }
     if (type === "interest") {
       updates.totalInterest = (stats.totalInterest || 0) + amount;
+    }
+    if (type === "borrow") {
+      updates.totalBorrow = (stats.totalBorrow || 0) + amount;
+    }
+    if (type === "payout") {
+      updates.totalPayout = (stats.totalPayout || 0) + amount;
     }
 
     transaction.update(statsRef, updates);
@@ -141,10 +147,10 @@ export async function updateTransaction(params: UpdateTransactionParams) {
 
     // Calculate old delta
     let oldDelta = 0;
-    if (["deposit", "return", "opening_balance", "interest"].includes(oldTx.type)) {
+    if (["deposit", "return", "repayment", "opening_balance", "interest"].includes(oldTx.type)) {
       oldDelta = oldTx.amount;
     }
-    if (oldTx.type === "withdrawal") {
+    if (["withdrawal", "borrow", "payout"].includes(oldTx.type)) {
       oldDelta = -oldTx.amount;
     }
 
@@ -152,10 +158,10 @@ export async function updateTransaction(params: UpdateTransactionParams) {
     const newType = type || oldTx.type;
     const newAmount = amount ?? oldTx.amount;
     let newDelta = 0;
-    if (["deposit", "return", "opening_balance", "interest"].includes(newType)) {
+    if (["deposit", "repayment", "opening_balance", "interest"].includes(newType)) {
       newDelta = newAmount;
     }
-    if (newType === "withdrawal") {
+    if (["withdrawal", "borrow", "payout"].includes(newType)) {
       newDelta = -newAmount;
     }
 
@@ -201,8 +207,8 @@ export async function updateTransaction(params: UpdateTransactionParams) {
       if (oldTx.type === "deposit" || oldTx.type === "opening_balance") {
         statsUpdates.totalDeposit = (stats.totalDeposit || 0) - oldTx.amount;
       }
-      if (oldTx.type === "return") {
-        statsUpdates.totalReturn = (stats.totalReturn || 0) - oldTx.amount;
+      if (oldTx.type === "return" || oldTx.type === "repayment") {
+        statsUpdates.totalRepayment = ((stats as any).totalRepayment ?? (stats as any).totalReturn ?? 0) - oldTx.amount;
       }
       if (oldTx.type === "withdrawal") {
         statsUpdates.totalWithdrawal =
@@ -211,14 +217,20 @@ export async function updateTransaction(params: UpdateTransactionParams) {
       if (oldTx.type === "interest") {
         statsUpdates.totalInterest = (stats.totalInterest || 0) - oldTx.amount;
       }
+      if (oldTx.type === "borrow") {
+        statsUpdates.totalBorrow = (stats.totalBorrow || 0) - oldTx.amount;
+      }
+      if (oldTx.type === "payout") {
+        statsUpdates.totalPayout = (stats.totalPayout || 0) - oldTx.amount;
+      }
 
       if (newType === "deposit" || newType === "opening_balance") {
         statsUpdates.totalDeposit =
           ((statsUpdates.totalDeposit ?? stats.totalDeposit) || 0) + newAmount;
       }
-      if (newType === "return") {
-        statsUpdates.totalReturn =
-          ((statsUpdates.totalReturn ?? stats.totalReturn) || 0) + newAmount;
+      if (newType === "repayment") {
+        statsUpdates.totalRepayment =
+          ((statsUpdates.totalRepayment ?? (stats as any).totalRepayment ?? (stats as any).totalReturn) || 0) + newAmount;
       }
       if (newType === "withdrawal") {
         statsUpdates.totalWithdrawal =
@@ -229,15 +241,23 @@ export async function updateTransaction(params: UpdateTransactionParams) {
         statsUpdates.totalInterest =
           ((statsUpdates.totalInterest ?? stats.totalInterest) || 0) + newAmount;
       }
+      if (newType === "borrow") {
+        statsUpdates.totalBorrow =
+          ((statsUpdates.totalBorrow ?? stats.totalBorrow) || 0) + newAmount;
+      }
+      if (newType === "payout") {
+        statsUpdates.totalPayout =
+          ((statsUpdates.totalPayout ?? stats.totalPayout) || 0) + newAmount;
+      }
     } else if (oldTx.amount !== newAmount) {
       // Amount changed
       if (newType === "deposit" || newType === "opening_balance") {
         statsUpdates.totalDeposit =
           (stats.totalDeposit || 0) + (newAmount - oldTx.amount);
       }
-      if (newType === "return") {
-        statsUpdates.totalReturn =
-          (stats.totalReturn || 0) + (newAmount - oldTx.amount);
+      if (newType === "repayment") {
+        statsUpdates.totalRepayment =
+          ((stats as any).totalRepayment ?? (stats as any).totalReturn ?? 0) + (newAmount - oldTx.amount);
       }
       if (newType === "withdrawal") {
         statsUpdates.totalWithdrawal =
@@ -246,6 +266,14 @@ export async function updateTransaction(params: UpdateTransactionParams) {
       if (newType === "interest") {
         statsUpdates.totalInterest =
           (stats.totalInterest || 0) + (newAmount - oldTx.amount);
+      }
+      if (newType === "borrow") {
+        statsUpdates.totalBorrow =
+          (stats.totalBorrow || 0) + (newAmount - oldTx.amount);
+      }
+      if (newType === "payout") {
+        statsUpdates.totalPayout =
+          (stats.totalPayout || 0) + (newAmount - oldTx.amount);
       }
     }
 
@@ -285,10 +313,10 @@ export async function voidTransaction(params: VoidTransactionParams) {
 
     // Reverse the transaction
     let reversalDelta = 0;
-    if (["deposit", "return", "opening_balance", "interest"].includes(oldTx.type)) {
+    if (["deposit", "return", "repayment", "opening_balance", "interest"].includes(oldTx.type)) {
       reversalDelta = -oldTx.amount;
     }
-    if (oldTx.type === "withdrawal") {
+    if (["withdrawal", "borrow", "payout"].includes(oldTx.type)) {
       reversalDelta = oldTx.amount;
     }
 
@@ -310,8 +338,8 @@ export async function voidTransaction(params: VoidTransactionParams) {
     if (oldTx.type === "deposit" || oldTx.type === "opening_balance") {
       statsUpdates.totalDeposit = (stats.totalDeposit || 0) - oldTx.amount;
     }
-    if (oldTx.type === "return") {
-      statsUpdates.totalReturn = (stats.totalReturn || 0) - oldTx.amount;
+    if (oldTx.type === "return" || oldTx.type === "repayment") {
+      statsUpdates.totalRepayment = ((stats as any).totalRepayment ?? (stats as any).totalReturn ?? 0) - oldTx.amount;
     }
     if (oldTx.type === "withdrawal") {
       statsUpdates.totalWithdrawal =
@@ -319,6 +347,12 @@ export async function voidTransaction(params: VoidTransactionParams) {
     }
     if (oldTx.type === "interest") {
       statsUpdates.totalInterest = (stats.totalInterest || 0) - oldTx.amount;
+    }
+    if (oldTx.type === "borrow") {
+      statsUpdates.totalBorrow = (stats.totalBorrow || 0) - oldTx.amount;
+    }
+    if (oldTx.type === "payout") {
+      statsUpdates.totalPayout = (stats.totalPayout || 0) - oldTx.amount;
     }
 
     transaction.update(statsRef, statsUpdates);

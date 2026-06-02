@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getFY, parseFY, calculatePoolBalance, calculateMemberNet, formatINR } from './financialYear';
+import { getFY, parseFY, calculatePoolBalance, calculateMemberNet, formatINR, normalizeTransactionType } from './financialYear';
 
 describe('getFY', () => {
   it('returns 2025-2026 for April 2025', () => {
@@ -44,7 +44,7 @@ describe('calculatePoolBalance', () => {
     const txs: LightweightTransaction[] = [
       { type: 'deposit', amount: 1000, status: 'active' },
       { type: 'withdrawal', amount: 300, status: 'active' },
-      { type: 'return', amount: 200, status: 'active' },
+      { type: 'repayment', amount: 200, status: 'active' },
       { type: 'withdrawal', amount: 100, status: 'void' },
     ];
     expect(calculatePoolBalance(txs)).toBe(900);
@@ -86,6 +86,103 @@ describe('calculateMemberNet', () => {
       { type: 'deposit', amount: 1000, status: 'active', memberId: 'member1' },
     ];
     expect(calculateMemberNet(txs, 'member2')).toBe(0);
+  });
+});
+
+describe('normalizeTransactionType', () => {
+  it('maps "return" to "repayment"', () => {
+    expect(normalizeTransactionType('return')).toBe('repayment');
+  });
+
+  it('passes through valid types unchanged', () => {
+    expect(normalizeTransactionType('deposit')).toBe('deposit');
+    expect(normalizeTransactionType('withdrawal')).toBe('withdrawal');
+    expect(normalizeTransactionType('repayment')).toBe('repayment');
+    expect(normalizeTransactionType('borrow')).toBe('borrow');
+    expect(normalizeTransactionType('payout')).toBe('payout');
+    expect(normalizeTransactionType('interest')).toBe('interest');
+    expect(normalizeTransactionType('opening_balance')).toBe('opening_balance');
+  });
+});
+
+describe('calculatePoolBalance - new transaction types', () => {
+  it('borrow transactions subtract from pool balance', () => {
+    const txs: LightweightTransaction[] = [
+      { type: 'deposit', amount: 1000, status: 'active' },
+      { type: 'borrow', amount: 400, status: 'active' },
+    ];
+    expect(calculatePoolBalance(txs)).toBe(600);
+  });
+
+  it('payout transactions subtract from pool balance', () => {
+    const txs: LightweightTransaction[] = [
+      { type: 'deposit', amount: 1000, status: 'active' },
+      { type: 'payout', amount: 250, status: 'active' },
+    ];
+    expect(calculatePoolBalance(txs)).toBe(750);
+  });
+
+  it('repayment transactions add to pool balance', () => {
+    const txs: LightweightTransaction[] = [
+      { type: 'repayment', amount: 500, status: 'active' },
+    ];
+    expect(calculatePoolBalance(txs)).toBe(500);
+  });
+
+  it('calculates pool balance with all transaction types', () => {
+    const transactions = [
+      { type: 'deposit', amount: 1000, status: 'active' },
+      { type: 'withdrawal', amount: 200, status: 'active' },
+      { type: 'repayment', amount: 300, status: 'active' },
+      { type: 'borrow', amount: 150, status: 'active' },
+      { type: 'payout', amount: 500, status: 'active' },
+      { type: 'interest', amount: 50, status: 'active' },
+      { type: 'return', amount: 100, status: 'active' },  // legacy data
+      { type: 'deposit', amount: 200, status: 'void' },   // should be ignored
+    ];
+    // Expected: 0 + 1000 - 200 + 300 - 150 - 500 + 50 + 100 = 600
+    expect(calculatePoolBalance(transactions as any)).toBe(600);
+  });
+
+  it('backward compat: transactions with type "return" still add to pool', () => {
+    const txs = [
+      { type: 'deposit', amount: 1000, status: 'active' },
+      { type: 'return', amount: 300, status: 'active' },
+    ];
+    expect(calculatePoolBalance(txs as any)).toBe(1300);
+  });
+});
+
+describe('calculateMemberNet - new transaction types', () => {
+  it('borrow subtracts from member net', () => {
+    const txs: Array<LightweightTransaction & { memberId: string }> = [
+      { type: 'deposit', amount: 1000, status: 'active', memberId: 'm1' },
+      { type: 'borrow', amount: 400, status: 'active', memberId: 'm1' },
+    ];
+    expect(calculateMemberNet(txs, 'm1')).toBe(600);
+  });
+
+  it('payout subtracts from member net', () => {
+    const txs: Array<LightweightTransaction & { memberId: string }> = [
+      { type: 'deposit', amount: 1000, status: 'active', memberId: 'm1' },
+      { type: 'payout', amount: 250, status: 'active', memberId: 'm1' },
+    ];
+    expect(calculateMemberNet(txs, 'm1')).toBe(750);
+  });
+
+  it('repayment adds to member net', () => {
+    const txs: Array<LightweightTransaction & { memberId: string }> = [
+      { type: 'repayment', amount: 500, status: 'active', memberId: 'm1' },
+    ];
+    expect(calculateMemberNet(txs, 'm1')).toBe(500);
+  });
+
+  it('backward compat: type "return" transactions still add to member net', () => {
+    const txs = [
+      { type: 'deposit', amount: 1000, status: 'active', memberId: 'm1' },
+      { type: 'return', amount: 200, status: 'active', memberId: 'm1' },
+    ];
+    expect(calculateMemberNet(txs as any, 'm1')).toBe(1200);
   });
 });
 

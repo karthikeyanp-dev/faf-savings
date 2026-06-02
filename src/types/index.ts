@@ -1,14 +1,16 @@
 import type { Timestamp } from 'firebase/firestore';
 
 export type Role = 'maintainer' | 'viewer';
-export type TransactionType = 'deposit' | 'withdrawal' | 'return' | 'opening_balance' | 'interest';
+export type TransactionType = 'deposit' | 'withdrawal' | 'repayment' | 'borrow' | 'payout' | 'opening_balance' | 'interest';
 export type TransactionStatus = 'active' | 'void';
 
 export interface NotificationPrefs {
   enabled: boolean;
   deposit: boolean;
   withdrawal: boolean;
-  return: boolean;
+  repayment: boolean;
+  borrow: boolean;
+  payout: boolean;
   interest: boolean;
   opening_balance: boolean;
   updatedAt?: Timestamp;
@@ -67,9 +69,11 @@ export interface AppConfig {
 export interface StatsCurrent {
   poolBalance: number;
   totalDeposit: number;
-  totalReturn: number;
+  totalRepayment: number;
   totalWithdrawal: number;
   totalInterest: number;
+  totalBorrow: number;
+  totalPayout: number;
   updatedAt: Timestamp;
 }
 

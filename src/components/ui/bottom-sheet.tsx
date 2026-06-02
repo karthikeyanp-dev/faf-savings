@@ -84,6 +84,7 @@ interface FullScreenDrawerProps {
   title: string;
   onSave?: () => void;
   saveLabel?: string;
+  saveDisabled?: boolean;
   showClose?: boolean;
 }
 
@@ -95,6 +96,7 @@ export function FullScreenDrawer({
   title,
   onSave,
   saveLabel = 'Save',
+  saveDisabled = false,
   showClose = true,
 }: FullScreenDrawerProps) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -135,7 +137,12 @@ export function FullScreenDrawer({
             {onSave && (
               <button
                 onClick={onSave}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm active:scale-95 transition-all"
+                disabled={saveDisabled}
+                className={`px-4 py-2 rounded-lg font-medium text-sm active:scale-95 transition-all ${
+                  saveDisabled
+                    ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                    : 'bg-primary text-primary-foreground'
+                }`}
               >
                 {saveLabel}
               </button>
