@@ -260,7 +260,7 @@ const MemberCard = memo(function MemberCard({
               className={cn(
                 "text-base font-bold",
                 receivable > 0
-                  ? "text-rose-600 dark:text-rose-400"
+                  ? "text-foreground"
                   : "text-muted-foreground/60",
               )}
             >
@@ -273,7 +273,7 @@ const MemberCard = memo(function MemberCard({
               className={cn(
                 "text-base font-bold",
                 fyDeposited > 0
-                  ? "text-emerald-600 dark:text-emerald-400"
+                  ? "text-foreground"
                   : "text-muted-foreground/60",
               )}
             >
@@ -286,7 +286,7 @@ const MemberCard = memo(function MemberCard({
               className={cn(
                 "text-base font-bold",
                 fyWithdrawn > 0
-                  ? "text-amber-600 dark:text-amber-400"
+                  ? "text-foreground"
                   : "text-muted-foreground/60",
               )}
             >
@@ -685,7 +685,7 @@ export function DashboardPage() {
                           className={cn(
                             "text-right",
                             stats.dep > 0
-                              ? "text-emerald-600 dark:text-emerald-400"
+                              ? "text-foreground"
                               : "text-muted-foreground/60",
                           )}
                         >
@@ -695,7 +695,7 @@ export function DashboardPage() {
                           className={cn(
                             "text-right",
                             memberFyNetWithdrawn > 0
-                              ? "text-amber-600 dark:text-amber-400"
+                              ? "text-foreground"
                               : "text-muted-foreground/60",
                           )}
                         >
@@ -705,7 +705,7 @@ export function DashboardPage() {
                           className={cn(
                             "text-right",
                             receivable > 0
-                              ? "text-rose-600 dark:text-rose-400"
+                              ? "text-foreground"
                               : "text-muted-foreground/60",
                           )}
                         >

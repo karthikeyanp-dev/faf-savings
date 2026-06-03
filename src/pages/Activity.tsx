@@ -18,7 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatINR, getCurrentFY } from '@/utils/financialYear';
+import { formatINR, getCurrentFY, normalizeTransactionType } from '@/utils/financialYear';
 import type { TransactionDoc, MemberDoc } from '@/types';
 import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp } from 'lucide-react';
 import { m } from 'framer-motion';
@@ -77,9 +77,9 @@ const txTypeConfig = {
     icon: Wallet,
     badge: 'outline' as const
   },
-  interest: { 
-    label: 'Interest', 
-    color: 'bg-amber-500', 
+  interest: {
+    label: 'Interest',
+    color: 'bg-amber-500',
     icon: TrendingUp,
     badge: 'secondary' as const
   },
@@ -223,7 +223,18 @@ export function ActivityPage() {
           cursorsRef.current = [...cursorsRef.current, docs[docs.length - 1]];
         }
       }
-      return docs.map((d) => ({ id: d.id, ...d.data() } as TransactionDoc));
+      return docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          // Normalize legacy 'return' -> 'repayment' so display, filtering,
+          // and badge lookup all see the current type. Without this, any
+          // pre-rename row would be excluded by the 'repayment' filter
+          // and fall back to the default (deposit) badge.
+          type: normalizeTransactionType(data.type),
+        } as TransactionDoc;
+      });
     },
   });
 
@@ -577,11 +588,9 @@ export function ActivityPage() {
                       </div>
                       <div className="font-medium truncate">{tx.memberName}</div>
                       <div>
-                        <Badge
-                          variant={txTypeConfig[tx.type]?.badge || 'default'}
-                        >
-                          {txTypeConfig[tx.type]?.label || tx.type}
-                        </Badge>
+                        <span className={`px-2.5 py-1 rounded-md text-xs font-medium text-white ${(txTypeConfig[tx.type] || txTypeConfig.repayment).color}`}>
+                          {(txTypeConfig[tx.type] || txTypeConfig.repayment).label}
+                        </span>
                       </div>
                       <div className="text-right font-semibold">
                         {formatINR(tx.amount)}
