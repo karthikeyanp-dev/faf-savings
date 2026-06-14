@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SavingsMonthPicker } from '@/components/ui/savings-month-picker';
 
 import { transactionSchema } from '@/schemas';
 import type { TransactionDoc } from '@/types';
@@ -81,7 +82,12 @@ function EditFormContent({
       {(txType === 'deposit' || txType === 'return') && (
         <div>
           <Label className="text-sm font-medium">Savings Month</Label>
-          <Input type="month" {...register('savingsMonth')} className="mt-1.5" />
+          <div className="mt-1.5">
+            <SavingsMonthPicker
+              value={watch('savingsMonth') || ''}
+              onChange={(v) => setValue('savingsMonth', v)}
+            />
+          </div>
         </div>
       )}
 

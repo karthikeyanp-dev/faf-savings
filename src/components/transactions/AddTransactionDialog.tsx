@@ -16,11 +16,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectItem } from "@/components/ui/select";
+import { SavingsMonthPicker } from "@/components/ui/savings-month-picker";
 import { transactionSchema } from "@/schemas";
 import type { MemberDoc } from "@/types";
 import { toast } from "sonner";
 import { FullScreenDrawer } from "@/components/ui/bottom-sheet";
 import { useEffect, useState } from "react";
+import { getCurrentSavingsMonth } from "@/utils/financialYear";
 
 // Shared form content component
 function TransactionFormContent({
@@ -126,32 +128,22 @@ function TransactionFormContent({
         )}
       </div>
 
-      {txType === "deposit" && (
+      {(txType === "deposit" || txType === "return") && (
         <div>
-          <Label className="text-sm font-medium">Savings Month</Label>
-          <Input
-            type="month"
-            {...register("savingsMonth")}
-            className="mt-1.5"
-          />
+          <Label className="text-sm font-medium">
+            Savings Month{txType === "return" ? " (Optional)" : ""}
+          </Label>
+          <div className="mt-1.5">
+            <SavingsMonthPicker
+              value={watch("savingsMonth") || ""}
+              onChange={(v) => setValue("savingsMonth", v)}
+            />
+          </div>
           {errors.savingsMonth && (
             <p className="text-sm text-destructive mt-1">
               {errors.savingsMonth.message}
             </p>
           )}
-        </div>
-      )}
-
-      {txType === "return" && (
-        <div>
-          <Label className="text-sm font-medium">
-            Savings Month (Optional)
-          </Label>
-          <Input
-            type="month"
-            {...register("savingsMonth")}
-            className="mt-1.5"
-          />
         </div>
       )}
 
@@ -209,7 +201,7 @@ export function AddTransactionDialog({
       memberId: "",
       amount: 0,
       date: new Date(),
-      savingsMonth: "",
+      savingsMonth: getCurrentSavingsMonth(),
       notes: "",
     },
   });
@@ -238,7 +230,7 @@ export function AddTransactionDialog({
       toast.success(`Transaction created! New balance: ₹${result.newBalance}`);
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
-      reset();
+      reset({ type: "deposit", memberId: "", amount: 0, date: new Date(), savingsMonth: getCurrentSavingsMonth(), notes: "" });
       onClose();
     } catch (error: any) {
       toast.error(error.message || "Failed to create transaction");
@@ -246,7 +238,7 @@ export function AddTransactionDialog({
   };
 
   const handleClose = () => {
-    reset();
+    reset({ type: "deposit", memberId: "", amount: 0, date: new Date(), savingsMonth: getCurrentSavingsMonth(), notes: "" });
     onClose();
   };
 

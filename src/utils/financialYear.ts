@@ -86,6 +86,45 @@ export function formatDate(timestamp: Timestamp | Date): string {
   });
 }
 
+/** Short month labels (0-indexed). */
+const MONTH_LABELS = [
+  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+];
+
+const MONTH_LABELS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/**
+ * Format a `"YYYY-MM"` savings month string.
+ * - `'upper'` → `"MAR 2026"`
+ * - `'short'` → `"Mar-2026"`
+ * Returns the raw value unchanged if parsing fails (backward compat).
+ */
+export function formatSavingsMonth(value: string, style: 'upper' | 'short' = 'short'): string {
+  if (!value) return value;
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const year = match[1];
+  const monthIdx = parseInt(match[2], 10) - 1;
+  if (monthIdx < 0 || monthIdx > 11) return value;
+  if (style === 'upper') return `${MONTH_LABELS[monthIdx]} ${year}`;
+  return `${MONTH_LABELS_SHORT[monthIdx]}-${year}`;
+}
+
+export function getMonthLabels(): string[] {
+  return MONTH_LABELS;
+}
+
+export function getCurrentSavingsMonth(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
 export function getCurrentFY(): string {
   return getFY(new Date());
 }

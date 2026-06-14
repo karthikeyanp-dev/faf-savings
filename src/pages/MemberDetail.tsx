@@ -11,6 +11,7 @@ import {
   calculateFYTarget,
   formatDate,
   getOpeningBalance,
+  formatSavingsMonth,
 } from "@/utils/financialYear";
 import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
 import {
@@ -95,7 +96,7 @@ function TransactionRow({ tx }: { tx: TransactionDoc }) {
         {tx.savingsMonth && (
           <div className="mt-2 pt-2 border-t border-border">
             <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
-              {tx.savingsMonth}
+              {formatSavingsMonth(tx.savingsMonth, 'short')}
             </span>
           </div>
         )}

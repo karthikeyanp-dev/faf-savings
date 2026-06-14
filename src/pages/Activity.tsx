@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatINR, getCurrentFY } from '@/utils/financialYear';
+import { formatINR, getCurrentFY, formatSavingsMonth } from '@/utils/financialYear';
 import type { TransactionDoc, MemberDoc } from '@/types';
 import { EditTransactionDialog } from '@/components/transactions/EditTransactionDialog';
 import { VoidTransactionDialog } from '@/components/transactions/VoidTransactionDialog';
@@ -105,7 +105,7 @@ function TransactionCard({
           </div>
           {tx.savingsMonth && (
             <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
-              {tx.savingsMonth}
+              {formatSavingsMonth(tx.savingsMonth, 'short')}
             </span>
           )}
         </div>
@@ -410,7 +410,7 @@ export function ActivityPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">{formatINR(tx.amount)}</TableCell>
-                    <TableCell>{tx.savingsMonth || '-'}</TableCell>
+                    <TableCell>{tx.savingsMonth ? formatSavingsMonth(tx.savingsMonth, 'short') : '-'}</TableCell>
                     <TableCell>{tx.notes || '-'}</TableCell>
                     <TableCell>
                       <Badge variant={tx.status === 'active' ? 'default' : 'secondary'}>
