@@ -144,7 +144,7 @@ function FilterChip({
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       className={cn(
-        'px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+        'shrink-0 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
         active
           ? 'bg-primary text-primary-foreground'
           : 'bg-muted text-muted-foreground hover:bg-muted/80'
