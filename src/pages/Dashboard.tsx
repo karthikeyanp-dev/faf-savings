@@ -486,13 +486,6 @@ export function DashboardPage() {
                   (t) => t.memberId === member.id && t.type === "withdrawal",
                 )
                 .reduce((sum, t) => sum + t.amount, 0);
-              const memberFyReturned = fyTransactions
-                .filter((t) => t.memberId === member.id && t.type === "return")
-                .reduce((sum, t) => sum + t.amount, 0);
-              const memberFyNetWithdrawn = Math.max(
-                0,
-                memberFyWithdrawn - memberFyReturned,
-              );
 
               return (
                 <StaggerItem key={member.id}>
@@ -502,7 +495,7 @@ export function DashboardPage() {
                     receivable={receivable}
                     previousBal={memberOb}
                     fyDeposited={memberFyDeposited}
-                    fyWithdrawn={memberFyNetWithdrawn}
+                    fyWithdrawn={memberFyWithdrawn}
                     fyTarget={fyTarget}
                   />
                 </StaggerItem>
@@ -608,12 +601,12 @@ export function DashboardPage() {
                         <TableCell
                           className={cn(
                             "text-right",
-                            memberFyNetWithdrawn > 0
+                            memberFyWithdrawnRaw > 0
                               ? "text-amber-600 dark:text-amber-400"
                               : "text-muted-foreground/60",
                           )}
                         >
-                          {formatINR(memberFyNetWithdrawn)}
+                          {formatINR(memberFyWithdrawnRaw)}
                         </TableCell>
                         <TableCell
                           className={cn(
