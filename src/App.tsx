@@ -1,16 +1,41 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, LazyMotion, domAnimation } from 'framer-motion';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import { LoginPage } from '@/pages/Login';
-import { DashboardPage } from '@/pages/Dashboard';
-import { MembersPage } from '@/pages/Members';
-import { MemberDetailPage } from '@/pages/MemberDetail';
-import { ActivityPage } from '@/pages/Activity';
-import { SettingsPage } from '@/pages/Settings';
 import { PageTransition } from '@/components/animations/PageTransition';
 import { Toaster } from 'sonner';
+
+// Route-level code splitting. Each page becomes its own chunk that only
+// downloads when the user navigates to it. Named exports are rewrapped
+// as default so React.lazy accepts them.
+const LoginPage = lazy(() =>
+  import('@/pages/Login').then((m) => ({ default: m.LoginPage })),
+);
+const DashboardPage = lazy(() =>
+  import('@/pages/Dashboard').then((m) => ({ default: m.DashboardPage })),
+);
+const MembersPage = lazy(() =>
+  import('@/pages/Members').then((m) => ({ default: m.MembersPage })),
+);
+const MemberDetailPage = lazy(() =>
+  import('@/pages/MemberDetail').then((m) => ({ default: m.MemberDetailPage })),
+);
+const ActivityPage = lazy(() =>
+  import('@/pages/Activity').then((m) => ({ default: m.ActivityPage })),
+);
+const SettingsPage = lazy(() =>
+  import('@/pages/Settings').then((m) => ({ default: m.SettingsPage })),
+);
+
+function RouteSpinner() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    </div>
+  );
+}
 
 // Animated routes wrapper
 function AnimatedRoutes() {
@@ -18,41 +43,43 @@ function AnimatedRoutes() {
 
   return (
     <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/login" element={
-          <PageTransition>
-            <LoginPage />
-          </PageTransition>
-        } />
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={
+      <Suspense fallback={<RouteSpinner />}>
+        <Routes location={location} key={location.pathname}>
+          <Route path="/login" element={
             <PageTransition>
-              <DashboardPage />
+              <LoginPage />
             </PageTransition>
           } />
-          <Route path="/members" element={
-            <PageTransition>
-              <MembersPage />
-            </PageTransition>
-          } />
-          <Route path="/members/:id" element={
-            <PageTransition>
-              <MemberDetailPage />
-            </PageTransition>
-          } />
-          <Route path="/activity" element={
-            <PageTransition>
-              <ActivityPage />
-            </PageTransition>
-          } />
-          <Route path="/settings" element={
-            <PageTransition>
-              <SettingsPage />
-            </PageTransition>
-          } />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={
+              <PageTransition>
+                <DashboardPage />
+              </PageTransition>
+            } />
+            <Route path="/members" element={
+              <PageTransition>
+                <MembersPage />
+              </PageTransition>
+            } />
+            <Route path="/members/:id" element={
+              <PageTransition>
+                <MemberDetailPage />
+              </PageTransition>
+            } />
+            <Route path="/activity" element={
+              <PageTransition>
+                <ActivityPage />
+              </PageTransition>
+            } />
+            <Route path="/settings" element={
+              <PageTransition>
+                <SettingsPage />
+              </PageTransition>
+            } />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </AnimatePresence>
   );
 }
@@ -62,9 +89,14 @@ function App() {
     <QueryProvider>
       <AuthProvider>
         <BrowserRouter>
-          <AnimatedRoutes />
+          {/* LazyMotion with domAnimation is the small (~30 KB) bundle
+              variant. The whole tree must use `m` from framer-motion
+              (not `motion`) for this to actually trim the bundle. */}
+          <LazyMotion features={domAnimation}>
+            <AnimatedRoutes />
+          </LazyMotion>
         </BrowserRouter>
-        <Toaster 
+        <Toaster
           position="top-center"
           toastOptions={{
             style: {

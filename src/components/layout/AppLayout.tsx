@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, Suspense, lazy, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
 import { logout } from "@/lib/auth";
@@ -18,7 +18,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { BottomNav } from "./BottomNav";
 import { MobileHeader } from "./MobileHeader";
-import { AddTransactionDialog } from "@/components/transactions/AddTransactionDialog";
+
+// Maintainer-only dialog: only download the form code when the user
+// taps the "Add" FAB. Cuts a sizable chunk (zod, react-hook-form,
+// member queries) from the initial route.
+const AddTransactionDialog = lazy(() =>
+  import("@/components/transactions/AddTransactionDialog").then((m) => ({
+    default: m.AddTransactionDialog,
+  })),
+);
 
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -149,7 +157,9 @@ export function AppLayout({ children, hideHeader = false }: AppLayoutProps) {
 
       {/* Add Transaction Dialog - available from any page */}
       {showAddDialog && (
-        <AddTransactionDialog open onClose={() => setShowAddDialog(false)} />
+        <Suspense fallback={null}>
+          <AddTransactionDialog open onClose={() => setShowAddDialog(false)} />
+        </Suspense>
       )}
     </div>
   );

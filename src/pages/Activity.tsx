@@ -1,24 +1,43 @@
-import { useState, useMemo } from 'react';
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+  Suspense,
+  lazy,
+  memo,
+} from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { getDocs, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
+import { getAllTransactions, membersRef } from '@/lib/firestore';
 import { useAuth } from '@/providers/AuthProvider';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatINR, getCurrentFY, formatSavingsMonth } from '@/utils/financialYear';
+import { formatINR, getCurrentFY, normalizeTransactionType, formatSavingsMonth } from '@/utils/financialYear';
 import type { TransactionDoc, MemberDoc } from '@/types';
-import { EditTransactionDialog } from '@/components/transactions/EditTransactionDialog';
-import { VoidTransactionDialog } from '@/components/transactions/VoidTransactionDialog';
-import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { StaggerContainer, StaggerItem } from '@/components/animations/PageTransition';
+import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp, Pencil, Undo2 } from 'lucide-react';
+import { m } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+
+// Maintainer-only dialogs: defer their form code (zod, react-hook-form)
+// until the user actually opens one.
+const EditTransactionDialog = lazy(() =>
+  import('@/components/transactions/EditTransactionDialog').then((m) => ({
+    default: m.EditTransactionDialog,
+  })),
+);
+const VoidTransactionDialog = lazy(() =>
+  import('@/components/transactions/VoidTransactionDialog').then((m) => ({
+    default: m.VoidTransactionDialog,
+  })),
+);
 
 // Transaction type config
 const txTypeConfig = {
@@ -34,11 +53,23 @@ const txTypeConfig = {
     icon: ArrowDownRight,
     badge: 'destructive' as const
   },
-  return: { 
-    label: 'Return', 
+  repayment: { 
+    label: 'Repayment', 
     color: 'bg-blue-500', 
     icon: RotateCcw,
     badge: 'secondary' as const
+  },
+  borrow: { 
+    label: 'Borrow', 
+    color: 'bg-red-500', 
+    icon: ArrowDownRight,
+    badge: 'destructive' as const
+  },
+  payout: { 
+    label: 'Payout', 
+    color: 'bg-indigo-500', 
+    icon: Wallet,
+    badge: 'outline' as const
   },
   opening_balance: {
     label: 'Previous',
@@ -46,16 +77,21 @@ const txTypeConfig = {
     icon: Wallet,
     badge: 'outline' as const
   },
-  interest: { 
-    label: 'Interest', 
-    color: 'bg-amber-500', 
+  interest: {
+    label: 'Interest',
+    color: 'bg-amber-500',
     icon: TrendingUp,
     badge: 'secondary' as const
   },
 };
 
-// Mobile Transaction Card
-function TransactionCard({
+// Money leaving the pool. Shared by the mobile card and the desktop grid so
+// the same transaction never gets opposite cues in the two layouts.
+const OUTFLOW_TYPES = new Set(['withdrawal', 'borrow', 'payout']);
+
+// Mobile Transaction Card. Memoized so a search keystroke or a
+// Load-more click does not re-render every previously visible row.
+const TransactionCard = memo(function TransactionCard({
   tx,
   memberName,
   onEdit,
@@ -68,9 +104,16 @@ function TransactionCard({
   onVoid: () => void;
   isMaintainer: boolean;
 }) {
-  const config = txTypeConfig[tx.type] || txTypeConfig.deposit;
+  // The list queryFn already normalizes legacy 'return', but normalize again
+  // so a card rendered from any other source can't be signed the wrong way.
+  const txType = normalizeTransactionType(tx.type);
+  const config = txTypeConfig[txType] || txTypeConfig.deposit;
   const Icon = config.icon;
   const isActive = tx.status === 'active';
+  // Must match MemberDetail's history rows, which render the same
+  // transaction — treating only withdrawals as outflows made a borrow read
+  // as green `+` here and orange `-` there.
+  const isOutflow = OUTFLOW_TYPES.has(txType);
 
   return (
     <Card className={cn(!isActive && 'opacity-60')}>
@@ -88,49 +131,64 @@ function TransactionCard({
           <div className="text-right">
             <p className={cn(
               'font-bold text-lg',
-              tx.type === 'withdrawal' ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
+              isOutflow ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
             )}>
-              {tx.type === 'withdrawal' ? '-' : '+'}{formatINR(tx.amount)}
+              {isOutflow ? '-' : '+'}{formatINR(tx.amount)}
             </p>
-            <Badge variant={isActive ? 'default' : 'secondary'} className="text-[10px]">
-              {tx.status}
-            </Badge>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-sm text-muted-foreground">
+        <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5" />
             <span>{format(tx.date.toDate(), 'MMM d, yyyy')}</span>
           </div>
-          {tx.savingsMonth && (
+          {/* Savings month only means something for deposits; legacy
+              borrow/repayment docs may carry stale values. */}
+          {tx.type === 'deposit' && tx.savingsMonth && (
             <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
               {formatSavingsMonth(tx.savingsMonth, 'short')}
             </span>
+          )}
+
+          {/* Edit / Revert are rare, maintainer-only actions: keep them as
+              quiet icon buttons tucked into the meta row rather than a
+              full-width pair competing with the amount for attention. */}
+          {/* Negative vertical margin lets the 28px tap targets overhang the
+              20px text line instead of setting the row height. */}
+          {isMaintainer && isActive && (
+            <div className="ml-auto -my-1 flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label="Edit transaction"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={onVoid}
+                aria-label="Revert transaction"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/20"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
 
         {tx.notes && (
           <p className="text-sm text-muted-foreground mt-2">{tx.notes}</p>
         )}
-
-        {isMaintainer && isActive && (
-          <div className="flex gap-2 mt-3">
-            <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-              Edit
-            </Button>
-            <Button variant="destructive" size="sm" className="flex-1" onClick={onVoid}>
-              Void
-            </Button>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
-}
+});
 
-// Filter Chip
-function FilterChip({
+// Filter Chip. Memoized so toggling one filter does not re-render the
+// other 4-6 chips in the same row.
+const FilterChip = memo(function FilterChip({
   label,
   active,
   onClick,
@@ -140,20 +198,20 @@ function FilterChip({
   onClick: () => void;
 }) {
   return (
-    <motion.button
+    <m.button
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       className={cn(
-        'shrink-0 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+        'shrink-0 inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
         active
           ? 'bg-primary text-primary-foreground'
           : 'bg-muted text-muted-foreground hover:bg-muted/80'
       )}
     >
       {label}
-    </motion.button>
+    </m.button>
   );
-}
+});
 
 export function ActivityPage() {
   const { isMaintainer } = useAuth();
@@ -168,59 +226,157 @@ export function ActivityPage() {
   const [memberFilter, setMemberFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions'],
+  // Stable setters that wrap setEditingTx / setVoidingTx so memoized
+  // transaction cards receive stable onEdit / onVoid props.
+  const openEditDialog = useCallback((tx: TransactionDoc) => setEditingTx(tx), []);
+  const openVoidDialog = useCallback((tx: TransactionDoc) => setVoidingTx(tx), []);
+
+  // Cursor-based pagination: each page is 50 transactions. The page index
+  // becomes the cache key so a refetch on the same page is deduped, and
+  // loading more creates a fresh page query.
+  const [pageIndex, setPageIndex] = useState(0);
+  const cursorsRef = useRef<(QueryDocumentSnapshot<DocumentData> | null)[]>([null]);
+  const [accumulated, setAccumulated] = useState<TransactionDoc[]>([]);
+
+  const cursor = cursorsRef.current[pageIndex] ?? null;
+
+  const { data: page = [], isLoading: pageLoading } = useQuery({
+    queryKey: ['transactions', 'activity', pageIndex],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'transactions'));
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as TransactionDoc));
+      const snap = await getDocs(getAllTransactions(cursor ?? undefined));
+      const docs = snap.docs;
+      // Stash the last doc as the cursor for the next page.
+      if (docs.length > 0) {
+        if (cursorsRef.current.length <= pageIndex + 1) {
+          cursorsRef.current = [...cursorsRef.current, docs[docs.length - 1]];
+        }
+      }
+      return docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          // Normalize legacy 'return' -> 'repayment' so display, filtering,
+          // and badge lookup all see the current type. Without this, any
+          // pre-rename row would be excluded by the 'repayment' filter
+          // and fall back to the default (deposit) badge.
+          type: normalizeTransactionType(data.type),
+        } as TransactionDoc;
+      });
     },
   });
+
+  // Accumulate pages as they arrive. React Query handles the per-page
+  // dedup; this useEffect only appends new items.
+  useEffect(() => {
+    if (pageIndex === 0) {
+      setAccumulated(page);
+      return;
+    }
+    setAccumulated((prev) => {
+      const existing = new Set(prev.map((t) => t.id));
+      const fresh = page.filter((t) => !existing.has(t.id));
+      return fresh.length > 0 ? [...prev, ...fresh] : prev;
+    });
+  }, [page, pageIndex]);
+
+  const transactions = accumulated;
+  const hasMore = page.length >= 50;
+  const loadMore = () => {
+    if (!hasMore) return;
+    setPageIndex((i) => i + 1);
+  };
 
   const { data: members = [] } = useQuery({
     queryKey: ['members'],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'members'));
+      const snap = await getDocs(membersRef);
       return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MemberDoc));
     },
   });
 
-  const visibleTransactions = useMemo(
-    () => transactions.filter((t) => t.type !== 'opening_balance'),
-    [transactions]
+  // Lookup map for member name lookups. The filtered predicate and the
+  // getMemberName helper both ran `members.find()` per row previously;
+  // with 100+ rows this is 100+ array scans.
+  const memberById = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members],
   );
 
-  const fys = useMemo(() => 
-    Array.from(new Set(visibleTransactions.map((t) => t.fy))).sort().reverse(),
-    [visibleTransactions]
+  // Pre-attach the member name onto each transaction. This folds the
+  // per-row `members.find()` lookup into a single pass and lets the
+  // search filter below use the precomputed `memberName` field.
+  // The result type extends TransactionDoc with the optional name.
+  type TxWithMember = TransactionDoc & { memberName: string };
+
+  const visibleTransactions = useMemo<TxWithMember[]>(
+    () =>
+      transactions
+        .filter((t) => t.type !== 'opening_balance')
+        .map((t) => ({
+          ...t,
+          memberName: t.memberId
+            ? memberById.get(t.memberId)?.name ?? 'Unknown'
+            : 'Unknown',
+        })),
+    [transactions, memberById],
   );
 
+  const fys = useMemo(
+    () => Array.from(new Set(visibleTransactions.map((t) => t.fy))).sort().reverse(),
+    [visibleTransactions],
+  );
+
+  // Single fused pass: lowercased search once, all four filters in one
+  // walk, sort by date desc at the end. The 4-pass version plus a
+  // member-name lookup per row was the dominant cost on this page.
   const filtered = useMemo(() => {
+    const searchLower = searchQuery.toLowerCase();
     return visibleTransactions
-      .filter((t) => fyFilter === 'all' || t.fy === fyFilter)
-      .filter((t) => memberFilter === 'all' || t.memberId === memberFilter)
-      .filter((t) => typeFilter === 'all' || t.type === typeFilter)
       .filter((t) => {
-        if (!searchQuery) return true;
-        const memberName = members.find((m) => m.id === t.memberId)?.name || '';
-        const searchLower = searchQuery.toLowerCase();
-        return (
-          memberName.toLowerCase().includes(searchLower) ||
-          (t.notes && t.notes.toLowerCase().includes(searchLower)) ||
-          t.type.toLowerCase().includes(searchLower)
-        );
+        if (fyFilter !== 'all' && t.fy !== fyFilter) return false;
+        if (memberFilter !== 'all' && t.memberId !== memberFilter) return false;
+        if (typeFilter !== 'all' && t.type !== typeFilter) return false;
+        if (searchLower) {
+          if (
+            t.memberName.toLowerCase().indexOf(searchLower) === -1 &&
+            (!t.notes || t.notes.toLowerCase().indexOf(searchLower) === -1) &&
+            t.type.toLowerCase().indexOf(searchLower) === -1
+          ) {
+            return false;
+          }
+        }
+        return true;
       })
       .sort((a, b) => b.date.toMillis() - a.date.toMillis());
-  }, [visibleTransactions, fyFilter, memberFilter, typeFilter, searchQuery, members]);
-
-  const getMemberName = (memberId: string) => {
-    return members.find((m) => m.id === memberId)?.name || 'Unknown';
-  };
+  }, [visibleTransactions, fyFilter, memberFilter, typeFilter, searchQuery]);
 
   const activeFiltersCount = [
     fyFilter !== 'all',
     memberFilter !== 'all',
     typeFilter !== 'all',
   ].filter(Boolean).length;
+
+  // Virtualize both renderings of the filtered list. The mobile card list
+  // has variable row height (notes, savings month, edit/void buttons), so
+  // we measure dynamically. The desktop table rows are a fixed height
+  // determined by the cell padding, so a static estimate is fine.
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
+  const mobileVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => mobileScrollRef.current,
+    estimateSize: () => 160,
+    overscan: 5,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
+
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const tableVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: () => 56,
+    overscan: 8,
+  });
 
   return (
     <AppLayout>
@@ -336,8 +492,8 @@ export function ActivityPage() {
         </div>
 
         {/* Quick Filter Chips - Mobile */}
-        <div className="lg:hidden -mx-4 px-4">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        <div className="lg:hidden -mx-4 px-4 py-2">
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 px-1">
             <FilterChip
               label="All FYs"
               active={fyFilter === 'all'}
@@ -366,78 +522,166 @@ export function ActivityPage() {
           {filtered.length} transaction{filtered.length !== 1 ? 's' : ''}
         </p>
 
-        {/* Mobile: Card List */}
-        <StaggerContainer className="lg:hidden space-y-3">
-          {filtered.map((tx) => (
-            <StaggerItem key={tx.id}>
-              <TransactionCard
-                tx={tx}
-                memberName={getMemberName(tx.memberId)}
-                onEdit={() => setEditingTx(tx)}
-                onVoid={() => setVoidingTx(tx)}
-                isMaintainer={isMaintainer}
-              />
-            </StaggerItem>
-          ))}
-        </StaggerContainer>
+        {/* Mobile: Virtualized Card List */}
+        <div ref={mobileScrollRef} className="lg:hidden relative overflow-auto max-h-[75vh] -mx-4 px-4">
+          <div
+            style={{
+              height: `${mobileVirtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {mobileVirtualizer.getVirtualItems().map((virtualRow) => {
+              const tx = filtered[virtualRow.index];
+              return (
+                <div
+                  key={tx.id}
+                  data-index={virtualRow.index}
+                  ref={mobileVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                    paddingBottom: '12px',
+                  }}
+                >
+                  <TransactionCard
+                    tx={tx}
+                    memberName={tx.memberName}
+                    onEdit={() => openEditDialog(tx)}
+                    onVoid={() => openVoidDialog(tx)}
+                    isMaintainer={isMaintainer}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
-        {/* Desktop: Table */}
+        {/* Desktop: Virtualized Grid Table */}
+        {/* CSS grid layout (instead of <table>) is required for the
+            virtualization to play nicely: an absolutely-positioned row
+            cannot read the column widths of a real <tbody>, so a
+            table-based virtualizer collapses to a single column. The
+            header and rows share an identical grid template. */}
         <Card className="hidden lg:block">
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Month</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead>Status</TableHead>
-                  {isMaintainer && <TableHead>Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell>{tx.date.toDate().toLocaleDateString()}</TableCell>
-                    <TableCell>{getMemberName(tx.memberId)}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={txTypeConfig[tx.type]?.badge || 'default'}
+            <div
+              ref={tableScrollRef}
+              className="relative overflow-auto max-h-[75vh]"
+            >
+              {/* Sticky header row */}
+              <div
+                className="sticky top-0 z-10 grid items-center gap-3 bg-card border-b border-border px-4 py-3 text-xs font-medium text-muted-foreground"
+                style={{
+                  gridTemplateColumns:
+                    '100px minmax(120px, 1fr) 120px minmax(130px, 0.5fr) minmax(130px, 0.5fr) minmax(120px, 1.4fr) 100px 80px',
+                }}
+              >
+                <div>Date</div>
+                <div>Member</div>
+                <div>Type</div>
+                <div className="text-right pr-4">Amount</div>
+                <div>Month</div>
+                <div>Notes</div>
+                <div>Status</div>
+                {isMaintainer && <div className="text-right">Actions</div>}
+              </div>
+              {/* Virtualized rows */}
+              <div
+                style={{
+                  height: `${tableVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {tableVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const tx = filtered[virtualRow.index];
+                  return (
+                    <div
+                      key={tx.id}
+                      data-index={virtualRow.index}
+                      className="grid items-center gap-3 px-4 border-b border-border/50 text-sm absolute left-0 right-0"
+                      style={{
+                        gridTemplateColumns:
+                          '100px minmax(120px, 1fr) 120px minmax(130px, 0.5fr) minmax(130px, 0.5fr) minmax(120px, 1.4fr) 100px 80px',
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <div className="text-muted-foreground">
+                        {tx.date.toDate().toLocaleDateString()}
+                      </div>
+                      <div className="font-medium truncate">{tx.memberName}</div>
+                      <div>
+                        <span className={`px-2.5 py-1 rounded-md text-xs font-medium text-white ${(txTypeConfig[tx.type] || txTypeConfig.repayment).color}`}>
+                          {(txTypeConfig[tx.type] || txTypeConfig.repayment).label}
+                        </span>
+                      </div>
+                      <div
+                        className={cn(
+                          'text-right font-semibold pr-4',
+                          OUTFLOW_TYPES.has(tx.type)
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-green-600 dark:text-green-400',
+                        )}
                       >
-                        {txTypeConfig[tx.type]?.label || tx.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">{formatINR(tx.amount)}</TableCell>
-                    <TableCell>{tx.savingsMonth ? formatSavingsMonth(tx.savingsMonth, 'short') : '-'}</TableCell>
-                    <TableCell>{tx.notes || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant={tx.status === 'active' ? 'default' : 'secondary'}>
-                        {tx.status}
-                      </Badge>
-                    </TableCell>
-                    {isMaintainer && tx.status === 'active' && (
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setEditingTx(tx)}>
-                            Edit
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => setVoidingTx(tx)}>
-                            Void
-                          </Button>
+                        {OUTFLOW_TYPES.has(tx.type) ? '-' : '+'}
+                        {formatINR(tx.amount)}
+                      </div>
+                      <div className="text-muted-foreground truncate">
+                        {tx.type === 'deposit' && tx.savingsMonth
+                          ? formatSavingsMonth(tx.savingsMonth, 'short')
+                          : '-'}
+                      </div>
+                      <div className="text-muted-foreground truncate">
+                        {tx.notes || '-'}
+                      </div>
+                      <div>
+                        <Badge variant={tx.status === 'active' ? 'default' : 'secondary'}>
+                          {tx.status}
+                        </Badge>
+                      </div>
+                      {isMaintainer && (
+                        <div className="flex justify-end gap-1">
+                          {tx.status === 'active' ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setEditingTx(tx)}
+                                title="Edit"
+                                aria-label="Edit transaction"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVoidingTx(tx)}
+                                title="Revert"
+                                aria-label="Revert transaction"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/20"
+                              >
+                                <Undo2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         {/* Empty State */}
-        {filtered.length === 0 && (
+        {filtered.length === 0 && !pageLoading && (
           <div className="text-center py-12">
             <p className="text-muted-foreground">No transactions found</p>
             <Button
@@ -454,9 +698,30 @@ export function ActivityPage() {
           </div>
         )}
 
+        {/* Load More */}
+        {hasMore && filtered.length > 0 && (
+          <div className="flex justify-center pt-2">
+            <Button
+              variant="outline"
+              onClick={loadMore}
+              disabled={pageLoading}
+            >
+              {pageLoading ? 'Loading…' : 'Load more'}
+            </Button>
+          </div>
+        )}
+
         {/* Dialogs */}
-        {editingTx && <EditTransactionDialog transaction={editingTx} open onClose={() => setEditingTx(null)} />}
-        {voidingTx && <VoidTransactionDialog transaction={voidingTx} open onClose={() => setVoidingTx(null)} />}
+        {editingTx && (
+          <Suspense fallback={null}>
+            <EditTransactionDialog transaction={editingTx} open onClose={() => setEditingTx(null)} />
+          </Suspense>
+        )}
+        {voidingTx && (
+          <Suspense fallback={null}>
+            <VoidTransactionDialog transaction={voidingTx} open onClose={() => setVoidingTx(null)} />
+          </Suspense>
+        )}
       </div>
     </AppLayout>
   );

@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Wallet, Lock, Mail, ArrowRight } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 const loginSchema = z.object({
@@ -49,7 +49,7 @@ export function LoginPage() {
       </div>
 
       {/* Content */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
@@ -57,34 +57,34 @@ export function LoginPage() {
       >
         {/* Logo & Title */}
         <div className="text-center mb-8">
-          <motion.div
+          <m.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.1, duration: 0.4 }}
             className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-primary to-purple-600 shadow-xl shadow-primary/25 mb-6"
           >
             <Wallet className="h-10 w-10 text-white" />
-          </motion.div>
-          <motion.h1
+          </m.div>
+          <m.h1
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.4 }}
             className="text-3xl font-bold tracking-tight mb-2"
           >
             FaF Savings
-          </motion.h1>
-          <motion.p
+          </m.h1>
+          <m.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.4 }}
             className="text-muted-foreground"
           >
             Sign in to manage your savings pool
-          </motion.p>
+          </m.p>
         </div>
 
         {/* Login Card */}
-        <motion.div
+        <m.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.4, duration: 0.4 }}
@@ -165,18 +165,18 @@ export function LoginPage() {
               </form>
             </CardContent>
           </Card>
-        </motion.div>
+        </m.div>
 
         {/* Footer */}
-        <motion.p
+        <m.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6, duration: 0.4 }}
           className="text-center text-sm text-muted-foreground mt-8"
         >
           Protected by industry-standard encryption
-        </motion.p>
-      </motion.div>
+        </m.p>
+      </m.div>
     </div>
   );
 }

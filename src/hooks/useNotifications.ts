@@ -9,7 +9,9 @@ const DEFAULT_PREFS: NotificationPrefs = {
   enabled: false,
   deposit: true,
   withdrawal: true,
-  return: true,
+  repayment: true,
+  borrow: true,
+  payout: true,
   interest: true,
   opening_balance: true,
 };
@@ -46,11 +48,13 @@ export function useNotifications() {
           const data = userDoc.data();
           const stored = data.notificationPrefs as NotificationPrefs | undefined;
           if (stored) {
-            const loadedPrefs = {
+            const loadedPrefs: NotificationPrefs = {
               enabled: stored.enabled ?? DEFAULT_PREFS.enabled,
               deposit: stored.deposit ?? DEFAULT_PREFS.deposit,
               withdrawal: stored.withdrawal ?? DEFAULT_PREFS.withdrawal,
-              return: stored.return ?? DEFAULT_PREFS.return,
+              repayment: stored.repayment ?? DEFAULT_PREFS.repayment,
+              borrow: stored.borrow ?? DEFAULT_PREFS.borrow,
+              payout: stored.payout ?? DEFAULT_PREFS.payout,
               interest: stored.interest ?? DEFAULT_PREFS.interest,
               opening_balance: stored.opening_balance ?? DEFAULT_PREFS.opening_balance,
             };

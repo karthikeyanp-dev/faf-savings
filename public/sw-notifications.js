@@ -51,11 +51,13 @@ let listenerActive = false;   // Whether the Firestore listener is currently act
 // ── Notification helpers ───────────────────────────────────────────
 
 const TX_NOTIFICATIONS = {
-  deposit:         { title: 'New Deposit',       emoji: '\u{1F4B0}' },
-  withdrawal:      { title: 'Withdrawal Made',   emoji: '\u{1F4E4}' },
-  return:          { title: 'Return Processed',   emoji: '\u{1F504}' },
-  interest:        { title: 'Interest Added',     emoji: '\u{1F4C8}' },
-  opening_balance: { title: 'Balance Updated',    emoji: '\u2696\uFE0F' },
+  deposit:         { title: 'New Deposit',         emoji: '\u{1F4B0}' },
+  withdrawal:      { title: 'Withdrawal Made',     emoji: '\u{1F4E4}' },
+  repayment:       { title: 'Repayment Received',  emoji: '\u{1F504}' },
+  borrow:          { title: 'Borrow Processed',    emoji: '\u{1F4C9}' },
+  payout:          { title: 'Payout Processed',    emoji: '\u{1F3E6}' },
+  interest:        { title: 'Interest Added',      emoji: '\u{1F4C8}' },
+  opening_balance: { title: 'Balance Updated',     emoji: '\u2696\uFE0F' },
 };
 
 function formatAmount(amount) {
@@ -72,14 +74,15 @@ async function getMemberName(memberId) {
 }
 
 async function getUserPrefs() {
-  // Read notification prefs from IndexedDB (synced by main thread)
   const prefs = await idbGet('notificationPrefs');
   if (!prefs) return null;
   return {
     enabled: prefs.enabled === true,
     deposit: prefs.deposit !== false,
     withdrawal: prefs.withdrawal !== false,
-    return: prefs.return !== false,
+    repayment: prefs.repayment !== false || prefs.return !== false,
+    borrow: prefs.borrow !== false,
+    payout: prefs.payout !== false,
     interest: prefs.interest !== false,
     opening_balance: prefs.opening_balance !== false,
   };
