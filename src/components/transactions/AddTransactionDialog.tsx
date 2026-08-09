@@ -271,7 +271,7 @@ export function AddTransactionDialog({
     watch,
     setValue,
     trigger,
-    formState: { errors, isSubmitting, isValid, isDirty },
+    formState: { errors, isSubmitting, isValid, dirtyFields },
     reset,
   } = useForm({
     resolver: dynamicResolver,
@@ -388,11 +388,23 @@ export function AddTransactionDialog({
       !!selectedMemberId &&
       !memberBalancesReady);
 
-  // Rebuild the schema with the latest caps and re-validate any value the
-  // user has already typed once the limits arrive. Deps must be primitives:
-  // an object dep would change identity every render and, combined with
-  // trigger()'s state update, cause an infinite render loop.
+  // Rebuild the schema with the latest caps, then re-check what the user has
+  // already filled against them. The caps are per-type *and* per-member, and
+  // setValue(…, { shouldValidate }) only writes back the error for the field
+  // it was handed — so without this, switching type or member would leave the
+  // amount carrying the previous selection's verdict: a cap message that no
+  // longer applies, or silence over a real breach of the new limit.
+  //
+  // Only fields the user actually filled are re-run, so picking a type or a
+  // member doesn't immediately flag the ones still empty. isValid is still
+  // computed from a full schema run on every trigger(), so the submit button
+  // stays correct regardless of which errors get written back.
+  //
+  // Deps must be primitives: an object dep would change identity every render
+  // and, combined with trigger()'s state update, cause an infinite render loop.
   const { poolBalance, memberSavings, totalOutstanding } = amountLimits;
+  const amountEntered = !!dirtyFields.amount;
+  const memberEntered = !!dirtyFields.memberId;
   useEffect(() => {
     schemaRef.current = createTransactionSchema({
       borrowMax: poolFetched ? poolBalance : undefined,
@@ -400,8 +412,25 @@ export function AddTransactionDialog({
       repaymentMax: memberBalancesReady ? totalOutstanding : undefined,
       payoutMax: memberBalancesReady ? memberSavings : undefined,
     });
-    if (isDirty) void trigger();
-  }, [poolFetched, memberBalancesReady, poolBalance, memberSavings, totalOutstanding, isDirty, trigger]);
+    const fields: ("amount" | "memberId")[] = [];
+    if (amountEntered) fields.push("amount");
+    if (memberEntered) fields.push("memberId");
+    if (fields.length) void trigger(fields);
+  }, [
+    poolFetched,
+    memberBalancesReady,
+    poolBalance,
+    memberSavings,
+    totalOutstanding,
+    // Explicit, even though the caps above already move with them: a change of
+    // type or member must re-check the amount even when the two members happen
+    // to share the same limits.
+    txType,
+    selectedMemberId,
+    amountEntered,
+    memberEntered,
+    trigger,
+  ]);
 
   // Auto-fill the (read-only) payout amount. Written unconditionally so a
   // figure typed for another type can't survive the switch to payout — the

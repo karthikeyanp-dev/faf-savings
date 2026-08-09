@@ -62,7 +62,7 @@ function EditFormContent({
             <button
               key={type}
               type="button"
-              onClick={() => setValue('type', type)}
+              onClick={() => setValue('type', type, { shouldValidate: true, shouldDirty: true })}
               className={`px-3 py-2.5 rounded-xl text-sm font-medium capitalize transition-colors ${
                 txType === type
                   ? 'bg-primary text-primary-foreground'
@@ -298,6 +298,18 @@ export function EditTransactionDialog({
     isDirty,
     trigger,
   ]);
+
+  // Caps are per-type, so the existing amount must be re-checked against the
+  // new type's limit on every switch — setValue only revalidates the field it
+  // was given, so the amount would otherwise keep its pre-switch verdict.
+  // Skipped on mount so opening a legacy over-cap transaction doesn't open
+  // pre-flagged; the user's first edit surfaces it.
+  const prevTypeRef = useRef(txType);
+  useEffect(() => {
+    if (prevTypeRef.current === txType) return;
+    prevTypeRef.current = txType;
+    void trigger('amount');
+  }, [txType, trigger]);
 
   const onSubmit = async (data: any) => {
     if (balancesLoading) {
