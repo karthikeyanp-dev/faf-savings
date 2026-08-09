@@ -75,6 +75,9 @@ function TransactionFormContent({
 }) {
   const selectedMemberId = watch("memberId");
   const errorBorder = "border-destructive focus-visible:ring-destructive/20 focus-visible:border-destructive";
+  // The toggle is never stored: a deposit is "monthly" exactly while it
+  // carries a savings month, so the mode derives from the field itself.
+  const isMonthlySaving = !!watch("savingsMonth");
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
@@ -188,18 +191,51 @@ function TransactionFormContent({
       </div>
 
       {txType === "deposit" && (
-        <div>
-          <Label className="text-sm font-medium">Savings Month</Label>
-          <div className="mt-1.5">
-            <SavingsMonthPicker
-              value={watch("savingsMonth") || ""}
-              onChange={(v) => setValue("savingsMonth", v, { shouldValidate: true })}
-            />
+        <div className="space-y-3">
+          {/* Unlabeled mode toggle: picking "Normal Saving" clears the month
+              so the deposit is stored without one — the presence of the value
+              is the only difference between the two kinds of savings. */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setValue("savingsMonth", watch("savingsMonth") || getCurrentSavingsMonth(), { shouldValidate: true })
+              }
+              className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                isMonthlySaving
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              Monthly Saving
+            </button>
+            <button
+              type="button"
+              onClick={() => setValue("savingsMonth", "", { shouldValidate: true })}
+              className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                !isMonthlySaving
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              Normal Saving
+            </button>
           </div>
-          {errors.savingsMonth && (
-            <p className="text-sm text-destructive mt-1">
-              {errors.savingsMonth.message}
-            </p>
+          {isMonthlySaving && (
+            <div>
+              <Label className="text-sm font-medium">Savings Month</Label>
+              <div className="mt-1.5">
+                <SavingsMonthPicker
+                  value={watch("savingsMonth") || ""}
+                  onChange={(v) => setValue("savingsMonth", v, { shouldValidate: true })}
+                />
+              </div>
+              {errors.savingsMonth && (
+                <p className="text-sm text-destructive mt-1">
+                  {errors.savingsMonth.message}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Select, SelectItem } from '@/components/ui/select';
-import { getMonthLabels, formatSavingsMonth } from '@/utils/financialYear';
+import { getMonthLabels } from '@/utils/financialYear';
 import { cn } from '@/lib/utils';
 
 const MONTHS = getMonthLabels();
@@ -47,10 +47,6 @@ export function SavingsMonthPicker({
     return Array.from(set).sort((a, b) => a - b);
   }, [currentYear, parsedYear]);
 
-  const displayLabel = selMonth
-    ? formatSavingsMonth(value, 'upper')
-    : '--- , ---';
-
   const handleMonthChange = (m: string) => {
     // The "Month..." placeholder must not produce a value.
     if (!m) return;
@@ -65,32 +61,25 @@ export function SavingsMonthPicker({
   };
 
   return (
-    <div className={cn('space-y-2', className)}>
-      {/* Preview label */}
-      <p className="text-sm font-semibold text-foreground tracking-wide">
-        {displayLabel}
-      </p>
+    <div className={cn('grid grid-cols-2 gap-2', className)}>
+      {/* Month select */}
+      <Select value={selMonth} onValueChange={handleMonthChange}>
+        <SelectItem value="">Month...</SelectItem>
+        {MONTHS.map((label, idx) => (
+          <SelectItem key={label} value={String(idx + 1)}>
+            {label}
+          </SelectItem>
+        ))}
+      </Select>
 
-      <div className="grid grid-cols-2 gap-2">
-        {/* Month select */}
-        <Select value={selMonth} onValueChange={handleMonthChange}>
-          <SelectItem value="">Month...</SelectItem>
-          {MONTHS.map((label, idx) => (
-            <SelectItem key={label} value={String(idx + 1)}>
-              {label}
-            </SelectItem>
-          ))}
-        </Select>
-
-        {/* Year select */}
-        <Select value={selYear} onValueChange={handleYearChange}>
-          {years.map((y) => (
-            <SelectItem key={y} value={String(y)}>
-              {y}
-            </SelectItem>
-          ))}
-        </Select>
-      </div>
+      {/* Year select */}
+      <Select value={selYear} onValueChange={handleYearChange}>
+        {years.map((y) => (
+          <SelectItem key={y} value={String(y)}>
+            {y}
+          </SelectItem>
+        ))}
+      </Select>
     </div>
   );
 }
