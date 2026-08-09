@@ -187,7 +187,7 @@ function TransactionFormContent({
         )}
       </div>
 
-      {(txType === "deposit" || txType === "return") && (
+      {txType === "deposit" && (
         <div>
           <Label className="text-sm font-medium">Savings Month</Label>
           <div className="mt-1.5">
@@ -203,7 +203,6 @@ function TransactionFormContent({
           )}
         </div>
       )}
-
 
       <div>
         <Label className="text-sm font-medium">Notes (Optional)</Label>

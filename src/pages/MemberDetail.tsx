@@ -229,7 +229,6 @@ const TransactionCard = memo(function TransactionCard({
             <Calendar className="h-3.5 w-3.5 shrink-0" />
             <span>{formatDate(tx.date)}</span>
           </div>
-
           {/* Savings month only means something for deposits; legacy
               borrow/repayment docs may carry stale values. */}
           {tx.type === "deposit" && tx.savingsMonth && (
