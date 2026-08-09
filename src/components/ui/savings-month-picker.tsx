@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Select, SelectItem } from '@/components/ui/select';
 import { getMonthLabels, formatSavingsMonth } from '@/utils/financialYear';
 import { cn } from '@/lib/utils';
@@ -7,8 +7,8 @@ const MONTHS = getMonthLabels();
 
 /**
  * A two-dropdown month/year picker that reads/writes the `"YYYY-MM"`
- * string format. When `value` is empty, it defaults to the current
- * month and year internally but does not emit until the user picks.
+ * string format. The year is held locally until a month is picked, so the
+ * picker never emits a month the user did not choose.
  */
 export function SavingsMonthPicker({
   value,
@@ -20,31 +20,47 @@ export function SavingsMonthPicker({
   className?: string;
 }) {
   const currentYear = new Date().getFullYear();
-  const years = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => currentYear - 3 + i),
-    [currentYear],
-  );
 
-  // Parse stored value; fall back to current month/year
+  // Parse the stored value. A month outside 1-12 (e.g. legacy "2026-00" or
+  // "2026-13") is treated as "no month picked" rather than shown as a real
+  // selection — and its year is discarded with it, because a value we refuse
+  // to display must not silently supply the year of the next month pick.
   const parsed = /^(\d{4})-(\d{2})$/.exec(value);
-  const selYear = parsed ? parsed[1] : String(currentYear);
-  const selMonth = parsed ? String(parseInt(parsed[2], 10)) : '';
+  const parsedMonth = parsed ? parseInt(parsed[2], 10) : 0;
+  const hasMonth = parsedMonth >= 1 && parsedMonth <= 12;
+  const parsedYear = parsed && hasMonth ? parsed[1] : null;
+  const selMonth = hasMonth ? String(parsedMonth) : '';
 
-  const displayLabel = value
+  // Year picked before a month exists only in local state — emitting it
+  // early would silently stamp January onto the form. Once a real month is
+  // stored, the stored year wins again (handleYearChange has already pushed
+  // any user change into it), so an external value reset isn't shadowed.
+  const [pendingYear, setPendingYear] = useState<string | null>(null);
+  const selYear = parsedYear ?? pendingYear ?? String(currentYear);
+
+  const years = useMemo(() => {
+    const set = new Set<number>();
+    for (let i = 0; i < 7; i++) set.add(currentYear - 3 + i);
+    // An older entry's own year must remain selectable, otherwise the
+    // <select> renders blank and touching the month re-stamps the wrong year.
+    if (parsedYear) set.add(Number(parsedYear));
+    return Array.from(set).sort((a, b) => a - b);
+  }, [currentYear, parsedYear]);
+
+  const displayLabel = selMonth
     ? formatSavingsMonth(value, 'upper')
     : '--- , ---';
 
   const handleMonthChange = (m: string) => {
-    const year = selYear || String(currentYear);
-    onChange(`${year}-${m.padStart(2, '0')}`);
+    // The "Month..." placeholder must not produce a value.
+    if (!m) return;
+    onChange(`${selYear}-${m.padStart(2, '0')}`);
   };
 
   const handleYearChange = (y: string) => {
+    setPendingYear(y);
     if (selMonth) {
       onChange(`${y}-${selMonth.padStart(2, '0')}`);
-    } else {
-      // No month picked yet — just store year with January
-      onChange(`${y}-01`);
     }
   };
 

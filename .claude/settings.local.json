@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(git log *)",
+      "Bash(grep -i \"firebase-admin\\\\|^tsx$\")"
     ]
   }
 }

@@ -1,19 +1,31 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useMemo, useState, useCallback, Suspense, lazy } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { doc, getDoc, getDocs } from "firebase/firestore";
+import { doc, getDoc, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getTransactionsByMember, membersRef } from "@/lib/firestore";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/providers/AuthProvider";
 import {
   formatINR,
   getCurrentFY,
   calculateFYTarget,
   formatDate,
   getOpeningBalance,
+  normalizeTransactionType,
+  parseFY,
   formatSavingsMonth,
+  computeMemberTotals,
 } from "@/utils/financialYear";
 import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
 import {
@@ -22,12 +34,27 @@ import {
   ArrowDownRight,
   RotateCcw,
   Wallet,
-  Calendar,
   TrendingUp,
+  Pencil,
+  Undo2,
+  Calendar,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { m } from "framer-motion";
 import { cn } from "@/lib/utils";
+
+// Maintainer-only dialogs: defer their form code (zod, react-hook-form)
+// until the user actually opens one.
+const EditTransactionDialog = lazy(() =>
+  import("@/components/transactions/EditTransactionDialog").then((mod) => ({
+    default: mod.EditTransactionDialog,
+  })),
+);
+const VoidTransactionDialog = lazy(() =>
+  import("@/components/transactions/VoidTransactionDialog").then((mod) => ({
+    default: mod.VoidTransactionDialog,
+  })),
+);
 
 const txTypeConfig = {
   deposit: { label: "Deposit", color: "bg-green-500", icon: ArrowUpRight },
@@ -35,7 +62,7 @@ const txTypeConfig = {
   repayment: { label: "Repayment", color: "bg-blue-500", icon: RotateCcw },
   borrow: { label: "Borrow", color: "bg-red-500", icon: ArrowDownRight },
   payout: { label: "Payout", color: "bg-indigo-500", icon: Wallet },
-  opening_balance: { label: "Previous Balance", color: "bg-purple-500", icon: Wallet },
+  opening_balance: { label: "Previous FY Balance", color: "bg-purple-500", icon: Wallet },
   interest: { label: "Interest", color: "bg-amber-500", icon: TrendingUp },
 };
 
@@ -43,60 +70,200 @@ const txTypeConfig = {
 // (e.g. opening balance editing) do not re-render every history row.
 const TransactionRow = memo(function TransactionRow({
   tx,
+  isMaintainer,
+  onEdit,
+  onVoid,
 }: {
   tx: TransactionDoc;
+  isMaintainer: boolean;
+  onEdit: (tx: TransactionDoc) => void;
+  onVoid: (tx: TransactionDoc) => void;
 }) {
-  const config = txTypeConfig[tx.type] || txTypeConfig.deposit;
+  // Normalize before lookup so legacy 'return' rows (e.g. from a
+  // prefetch that skipped normalization) never fall back to Deposit.
+  const txType = normalizeTransactionType(tx.type);
+  const config = txTypeConfig[txType] || txTypeConfig.deposit;
   const Icon = config.icon;
   const isActive = tx.status === "active";
+  // Outflows (and negative carried-over balances) render as -amount in
+  // orange; everything else as +amount in green. Uses the normalized type
+  // so a row that skipped normalization can't be signed the wrong way.
+  const isOutflow =
+    txType === "withdrawal" || txType === "borrow" || txType === "payout";
+  const signedAmount = isOutflow ? -tx.amount : tx.amount;
+
+  return (
+    <TableRow className={cn(!isActive && "opacity-60")}>
+      <TableCell className="py-3">
+        <div className="flex items-center gap-3">
+          <div className={cn("p-1.5 rounded-lg shrink-0", config.color)}>
+            <Icon className="h-3.5 w-3.5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-sm">{config.label}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatDate(tx.date)}
+            </p>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col gap-1">
+          {tx.type === "deposit" && tx.savingsMonth && (
+            <span className="text-xs bg-muted px-2 py-0.5 rounded-full w-fit">
+              {formatSavingsMonth(tx.savingsMonth, "short")}
+            </span>
+          )}
+          {tx.notes && (
+            <p className="text-xs text-muted-foreground truncate max-w-[240px]">
+              {tx.notes}
+            </p>
+          )}
+        </div>
+      </TableCell>
+      <TableCell
+        className={cn(
+          "text-right font-semibold whitespace-nowrap",
+          signedAmount < 0
+            ? "text-orange-600 dark:text-orange-400"
+            : "text-green-600 dark:text-green-400",
+        )}
+      >
+        {signedAmount < 0 ? "-" : "+"}
+        {formatINR(Math.abs(signedAmount))}
+      </TableCell>
+      <TableCell className="text-right">
+        <Badge
+          variant={isActive ? "default" : "secondary"}
+          className="text-[10px]"
+        >
+          {tx.status}
+        </Badge>
+      </TableCell>
+      {isMaintainer && (
+        <TableCell className="text-right">
+          {isActive && tx.type !== "opening_balance" && (
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onEdit(tx)}
+                aria-label="Edit transaction"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+                onClick={() => onVoid(tx)}
+                aria-label="Revert transaction"
+              >
+                <Undo2 className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </TableCell>
+      )}
+    </TableRow>
+  );
+});
+
+// Mobile transaction card. Deliberately mirrors the Activity page card so
+// the two histories read as the same object on a phone; the table above is
+// desktop-only. Memoized for the same reason as TransactionRow.
+const TransactionCard = memo(function TransactionCard({
+  tx,
+  isMaintainer,
+  onEdit,
+  onVoid,
+}: {
+  tx: TransactionDoc;
+  isMaintainer: boolean;
+  onEdit: (tx: TransactionDoc) => void;
+  onVoid: (tx: TransactionDoc) => void;
+}) {
+  const txType = normalizeTransactionType(tx.type);
+  const config = txTypeConfig[txType] || txTypeConfig.deposit;
+  const Icon = config.icon;
+  const isActive = tx.status === "active";
+  const isOutflow =
+    txType === "withdrawal" || txType === "borrow" || txType === "payout";
+  const signedAmount = isOutflow ? -tx.amount : tx.amount;
+  // Opening balance rows are derived, not user-entered: never editable.
+  const canModify = isMaintainer && isActive && tx.type !== "opening_balance";
 
   return (
     <Card className={cn(!isActive && "opacity-60")}>
       <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-xl", config.color)}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={cn("p-2 rounded-xl shrink-0", config.color)}>
               <Icon className="h-4 w-4 text-white" />
             </div>
-            <div>
-              <p className="font-semibold text-sm">{config.label}</p>
-              <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                <Calendar className="h-3 w-3" />
-                <span>{formatDate(tx.date)}</span>
-              </div>
+            <div className="min-w-0">
+              <p className="font-semibold truncate">{config.label}</p>
+              {!isActive && (
+                <Badge variant="secondary" className="mt-0.5 text-[10px]">
+                  {tx.status}
+                </Badge>
+              )}
             </div>
           </div>
-          <div className="text-right">
-            <p
-              className={cn(
-                "font-bold",
-                tx.type === "withdrawal"
-                  ? "text-orange-600 dark:text-orange-400"
-                  : "text-green-600 dark:text-green-400",
-              )}
-            >
-              {tx.type === "withdrawal" ? "-" : "+"}
-              {formatINR(tx.amount)}
-            </p>
-            <Badge
-              variant={isActive ? "default" : "secondary"}
-              className="text-[10px]"
-            >
-              {tx.status}
-            </Badge>
-          </div>
+          <p
+            className={cn(
+              "font-bold text-lg whitespace-nowrap",
+              signedAmount < 0
+                ? "text-orange-600 dark:text-orange-400"
+                : "text-green-600 dark:text-green-400",
+            )}
+          >
+            {signedAmount < 0 ? "-" : "+"}
+            {formatINR(Math.abs(signedAmount))}
+          </p>
         </div>
 
-        {tx.savingsMonth && (
-          <div className="mt-2 pt-2 border-t border-border">
-            <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
-              {formatSavingsMonth(tx.savingsMonth, 'short')}
-            </span>
+        <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-3.5 w-3.5 shrink-0" />
+            <span>{formatDate(tx.date)}</span>
           </div>
-        )}
+
+          {/* Savings month only means something for deposits; legacy
+              borrow/repayment docs may carry stale values. */}
+          {tx.type === "deposit" && tx.savingsMonth && (
+            <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+              {formatSavingsMonth(tx.savingsMonth, "short")}
+            </span>
+          )}
+
+          {/* Negative vertical margin lets the 28px tap targets overhang the
+              20px text line instead of setting the row height. */}
+          {canModify && (
+            <div className="ml-auto -my-1 flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => onEdit(tx)}
+                aria-label="Edit transaction"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onVoid(tx)}
+                aria-label="Revert transaction"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/20"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
 
         {tx.notes && (
-          <p className="text-xs text-muted-foreground mt-2">{tx.notes}</p>
+          <p className="text-sm text-muted-foreground mt-2">{tx.notes}</p>
         )}
       </CardContent>
     </Card>
@@ -106,8 +273,16 @@ const TransactionRow = memo(function TransactionRow({
 export function MemberDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isMaintainer } = useAuth();
   const currentFY = getCurrentFY();
   const fyTarget = calculateFYTarget(currentFY);
+
+  const [editingTx, setEditingTx] = useState<TransactionDoc | null>(null);
+  const [voidingTx, setVoidingTx] = useState<TransactionDoc | null>(null);
+
+  // Stable setters so memoized history rows keep stable onEdit/onVoid props.
+  const openEditDialog = useCallback((tx: TransactionDoc) => setEditingTx(tx), []);
+  const openVoidDialog = useCallback((tx: TransactionDoc) => setVoidingTx(tx), []);
 
   const { data: members = [], isLoading: membersLoading } = useQuery({
     queryKey: ["members"],
@@ -122,9 +297,16 @@ export function MemberDetailPage() {
     queryFn: async () => {
       if (!id) return [] as TransactionDoc[];
       const snap = await getDocs(getTransactionsByMember(id));
-      return snap.docs.map(
-        (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
-      );
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          // Normalize legacy 'return' -> 'repayment' so history rows
+          // show the correct label/icon instead of the deposit fallback.
+          type: normalizeTransactionType(data.type),
+        } as TransactionDoc;
+      });
     },
     enabled: !!id,
   });
@@ -137,53 +319,48 @@ export function MemberDetailPage() {
     },
   });
 
-  // transactions is already member-scoped (getTransactionsByMember) so
-  // every filter by memberId is redundant; build all aggregates in a
-  // single pass and store the result in a memo.
-  const aggregates = useMemo(() => {
-    let totalDeposit = 0;
-    let totalReturn = 0;
-    let totalWithdrawal = 0;
-    let fyDeposited = 0;
-    let fyWithdrawnRaw = 0;
-    let fyReturned = 0;
-    let net = 0;
-    for (const t of transactions) {
-      if (t.status === "active") {
-        const type = (t as any).type === "return" ? "repayment" : t.type;
-        if (type === "deposit") {
-          totalDeposit += t.amount;
-          net += t.amount;
-        } else if (type === "repayment") {
-          totalReturn += t.amount;
-          net += t.amount;
-        } else if (type === "withdrawal" || type === "borrow" || type === "payout") {
-          totalWithdrawal += t.amount;
-          net -= t.amount;
-        }
-      }
-      if (t.fy === currentFY && t.status === "active") {
-        const type = (t as any).type === "return" ? "repayment" : t.type;
-        if (type === "deposit") fyDeposited += t.amount;
-        else if (type === "withdrawal") fyWithdrawnRaw += t.amount;
-        else if (type === "repayment") fyReturned += t.amount;
-      }
-    }
-    return {
-      totalDeposit,
-      totalReturn,
-      totalWithdrawal,
-      fyDeposited,
-      fyWithdrawn: Math.max(0, fyWithdrawnRaw - fyReturned),
-      fyNetBalance: fyDeposited - Math.max(0, fyWithdrawnRaw - fyReturned),
-      net,
-    };
-  }, [transactions, currentFY]);
+  const openingBalance = getOpeningBalance(config?.openingBalances, id ?? "");
+
+  // All member KPIs come from the shared helper so Dashboard, Members and
+  // this page can never drift apart on formulas.
+  const stats = useMemo(
+    () => computeMemberTotals(transactions, openingBalance, currentFY),
+    [transactions, openingBalance, currentFY],
+  );
 
   const memberById = useMemo(
     () => new Map(members.map((m) => [m.id, m])),
     [members],
   );
+
+  const member = memberById.get(id ?? "");
+
+  // History shows every member transaction across all FYs (including
+  // pre-FY dated entries), plus a synthetic "Previous FY Balance" row
+  // anchored at the start of the opening-balance FY so the ledger reads
+  // from the carried-over position. Re-sorted client-side because of the
+  // synthetic row (server query is already date-desc).
+  const memberTransactions = useMemo(() => {
+    const rows = transactions.filter((t) => t.type !== "opening_balance");
+    if (openingBalance !== 0 && id) {
+      const fy = config?.openingBalanceFY ?? currentFY;
+      const stamp = Timestamp.fromDate(parseFY(fy).start);
+      rows.push({
+        id: `opening-balance-${id}`,
+        type: "opening_balance",
+        memberId: id,
+        amount: openingBalance,
+        date: stamp,
+        fy,
+        notes: "Previous FY balance",
+        status: "active",
+        createdByUid: "system",
+        createdAt: stamp,
+        updatedAt: stamp,
+      });
+    }
+    return rows.sort((a, b) => b.date.toMillis() - a.date.toMillis());
+  }, [transactions, openingBalance, config?.openingBalanceFY, currentFY, id]);
 
   if (membersLoading || transactionsLoading || configLoading) {
     return (
@@ -195,7 +372,6 @@ export function MemberDetailPage() {
     );
   }
 
-  const member = memberById.get(id ?? "");
   if (!member) {
     return (
       <AppLayout>
@@ -212,36 +388,21 @@ export function MemberDetailPage() {
     );
   }
 
-  const openingBalances = config?.openingBalances;
-  const openingBalance = getOpeningBalance(openingBalances, member.id);
-  const net = aggregates.net + openingBalance;
-  const receivable = Math.max(0, -net);
-  const totalDeposit = aggregates.totalDeposit;
-  const totalReturn = aggregates.totalReturn;
-  const totalWithdrawal = aggregates.totalWithdrawal;
-  const fyNetBalance = aggregates.fyNetBalance;
+  const net = stats.net;
+  const receivable = stats.outstanding;
+  // FY-scoped so this card always equals the "FY Deposited" figure the
+  // Dashboard and Members pages show for the same member (its subtitle
+  // is "Current FY").
+  const totalDeposit = stats.fyDeposited;
+  const totalRepaid = stats.repaid;
+  const totalWithdrawal = stats.withdrawn;
+  const totalPaidOut = stats.paidOut;
+  const totalBorrow = stats.borrowed;
+  const fyNetBalance = stats.fyNetBalance;
   const progressPct =
     fyTarget > 0
       ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100)))
       : 0;
-
-  // transactions is already sorted by date desc server-side
-  // (getTransactionsByMember uses orderBy('date', 'desc')).
-  const memberTransactions = transactions.filter(
-    (t) => t.type !== "opening_balance",
-  );
-
-  // Virtualize the history list. Cards have variable height depending on
-  // notes and savingsMonth, so we measure dynamically. The scroll parent
-  // ref is attached to the wrapper div below.
-  const historyScrollRef = useRef<HTMLDivElement>(null);
-  const historyVirtualizer = useVirtualizer({
-    count: memberTransactions.length,
-    getScrollElement: () => historyScrollRef.current,
-    estimateSize: () => 120,
-    overscan: 5,
-    measureElement: (el) => el.getBoundingClientRect().height,
-  });
 
   return (
     <AppLayout>
@@ -306,15 +467,16 @@ export function MemberDetailPage() {
           </Card>
         </m.div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Stats Grid: single row on desktop, responsive grid below */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:flex lg:gap-3">
           {openingBalance !== 0 && (
             <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.02 }}
+              className="lg:flex-1"
             >
-              <Card className="h-full border-purple-200 dark:border-purple-800">
+              <Card className="h-full border-purple-200 dark:border-purple-800 opacity-50">
                 <CardContent className="p-4">
                   <p className="text-xs font-medium text-purple-600 dark:text-purple-400">
                     Previous Balance
@@ -333,6 +495,7 @@ export function MemberDetailPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
+            className="lg:flex-1"
           >
             <Card className="h-full">
               <CardContent className="p-4">
@@ -350,6 +513,7 @@ export function MemberDetailPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
+            className="lg:flex-1"
           >
             <Card className="h-full">
               <CardContent className="p-4">
@@ -359,25 +523,30 @@ export function MemberDetailPage() {
                 <p className="text-lg font-bold mt-1">
                   {formatINR(receivable)}
                 </p>
-                <p className="text-[11px] text-muted-foreground">Amount owed</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Amount owed · lifetime
+                </p>
               </CardContent>
             </Card>
           </m.div>
-          {totalReturn > 0 && (
+          {totalRepaid > 0 && (
             <m.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12 }}
+              className="lg:flex-1"
             >
               <Card className="h-full">
                 <CardContent className="p-4">
                   <p className="text-xs font-medium text-muted-foreground">
-                    Returns
+                    Repaid
                   </p>
                   <p className="text-lg font-bold mt-1">
-                    {formatINR(totalReturn)}
+                    {formatINR(totalRepaid)}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">Received</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Repayments · lifetime
+                  </p>
                 </CardContent>
               </Card>
             </m.div>
@@ -387,6 +556,7 @@ export function MemberDetailPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.14 }}
+              className="lg:flex-1"
             >
               <Card className="h-full">
                 <CardContent className="p-4">
@@ -396,7 +566,57 @@ export function MemberDetailPage() {
                   <p className="text-lg font-bold mt-1">
                     {formatINR(totalWithdrawal)}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">Taken out</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Taken out · lifetime
+                  </p>
+                </CardContent>
+              </Card>
+            </m.div>
+          )}
+          {/* Payouts drain savings like a withdrawal but are a separate
+              concept (full settlement), and the pool FY card tracks them
+              separately — so they get their own tile instead of inflating
+              the Withdrawals figure. */}
+          {totalPaidOut > 0 && (
+            <m.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="lg:flex-1"
+            >
+              <Card className="h-full">
+                <CardContent className="p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Paid Out
+                  </p>
+                  <p className="text-lg font-bold mt-1">
+                    {formatINR(totalPaidOut)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Balance settlements · lifetime
+                  </p>
+                </CardContent>
+              </Card>
+            </m.div>
+          )}
+          {totalBorrow > 0 && (
+            <m.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.16 }}
+              className="lg:flex-1"
+            >
+              <Card className="h-full">
+                <CardContent className="p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Borrowed
+                  </p>
+                  <p className="text-lg font-bold mt-1">
+                    {formatINR(totalBorrow)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    From pool, to repay · lifetime
+                  </p>
                 </CardContent>
               </Card>
             </m.div>
@@ -454,41 +674,72 @@ export function MemberDetailPage() {
               <p className="text-muted-foreground">No transactions found</p>
             </div>
           ) : (
-            <div
-              ref={historyScrollRef}
-              className="relative overflow-auto max-h-[70vh] -mx-1 px-1"
-            >
-              <div
-                style={{
-                  height: `${historyVirtualizer.getTotalSize()}px`,
-                  width: "100%",
-                  position: "relative",
-                }}
-              >
-                {historyVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const tx = memberTransactions[virtualRow.index];
-                  return (
-                    <div
-                      key={tx.id}
-                      data-index={virtualRow.index}
-                      ref={historyVirtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`,
-                        paddingBottom: "12px",
-                      }}
-                    >
-                      <TransactionRow tx={tx} />
-                    </div>
-                  );
-                })}
+            <>
+              {/* Mobile: card list matching the Activity page */}
+              <div className="md:hidden space-y-3">
+                {memberTransactions.map((tx) => (
+                  <TransactionCard
+                    key={tx.id}
+                    tx={tx}
+                    isMaintainer={isMaintainer}
+                    onEdit={openEditDialog}
+                    onVoid={openVoidDialog}
+                  />
+                ))}
               </div>
-            </div>
+
+              {/* Desktop: table */}
+              <Card className="overflow-hidden hidden md:block">
+                <div className="[&>div]:max-h-[70vh]">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-card [&>tr>th]:sticky [&>tr>th]:top-0 [&>tr>th]:bg-card">
+                      <TableRow>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Details</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right">Status</TableHead>
+                        {isMaintainer && (
+                          <TableHead className="text-right">Actions</TableHead>
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {memberTransactions.map((tx) => (
+                        <TransactionRow
+                          key={tx.id}
+                          tx={tx}
+                          isMaintainer={isMaintainer}
+                          onEdit={openEditDialog}
+                          onVoid={openVoidDialog}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
+            </>
           )}
         </section>
+
+        {/* Maintainer dialogs */}
+        {editingTx && (
+          <Suspense fallback={null}>
+            <EditTransactionDialog
+              transaction={editingTx}
+              open
+              onClose={() => setEditingTx(null)}
+            />
+          </Suspense>
+        )}
+        {voidingTx && (
+          <Suspense fallback={null}>
+            <VoidTransactionDialog
+              transaction={voidingTx}
+              open
+              onClose={() => setVoidingTx(null)}
+            />
+          </Suspense>
+        )}
       </div>
     </AppLayout>
   );

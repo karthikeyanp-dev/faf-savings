@@ -2,11 +2,7 @@ import { memo, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import {
-  getAllActiveTransactions,
-  getTransactionsByFY,
-  statsRef,
-} from "@/lib/firestore";
+import { getAllActiveTransactions } from "@/lib/firestore";
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +10,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -24,13 +21,13 @@ import {
   getCurrentFY,
   calculateFYTarget,
   getOpeningBalance,
+  buildMemberTotalsMap,
+  emptyMemberTotals,
+  computePoolFYStats,
+  computePoolTotals,
+  getTotalOpeningBalance,
 } from "@/utils/financialYear";
-import type {
-  AppConfig,
-  MemberDoc,
-  StatsCurrent,
-  TransactionDoc,
-} from "@/types";
+import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
 import {
   Wallet,
   Landmark,
@@ -41,6 +38,10 @@ import {
   ArrowUpFromLine,
   Percent,
   RotateCcw,
+  LogIn,
+  CircleDollarSign,
+  HandCoins,
+  Check,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { m } from "framer-motion";
@@ -49,6 +50,7 @@ import {
   StaggerItem,
 } from "@/components/animations/PageTransition";
 import { cn } from "@/lib/utils";
+import { KpiTile } from "@/components/ui/kpi-tile";
 
 // Summary Stat Card. Wrapped in React.memo so unrelated parent state
 // (search input, dialog toggles, sibling re-renders) does not re-render
@@ -200,20 +202,28 @@ const MemberCard = memo(function MemberCard({
   member,
   net,
   receivable,
+  borrowed,
+  repaid,
   previousBal,
   fyDeposited,
   fyWithdrawn,
+  fyNetBalance,
   fyTarget,
 }: {
   member: MemberDoc;
   net: number;
   receivable: number;
+  borrowed: number;
+  repaid: number;
   previousBal: number;
   fyDeposited: number;
   fyWithdrawn: number;
+  fyNetBalance: number;
   fyTarget: number;
 }) {
-  const fyNetBalance = fyDeposited - fyWithdrawn;
+  // fyNetBalance comes from the shared helper (deposits − withdrawals −
+  // payouts) rather than being recomputed here, so a payout can't leave the
+  // bar at 100% next to a zeroed balance.
   const progressPct =
     fyTarget > 0
       ? Math.max(0, Math.min(100, Math.round((fyNetBalance / fyTarget) * 100)))
@@ -248,57 +258,58 @@ const MemberCard = memo(function MemberCard({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-4 pt-4 border-t border-border">
-          <div>
-            <p className="text-base font-bold text-muted-foreground/60">
-              {previousBal !== 0 ? formatINR(previousBal) : "—"}
-            </p>
-            <p className="text-xs text-muted-foreground">Previous Bal</p>
-          </div>
-          <div className="text-right">
-            <p
-              className={cn(
-                "text-base font-bold",
-                receivable > 0
-                  ? "text-foreground"
-                  : "text-muted-foreground/60",
-              )}
-            >
-              {formatINR(receivable)}
-            </p>
-            <p className="text-xs text-muted-foreground">Outstanding</p>
-          </div>
-          <div>
-            <p
-              className={cn(
-                "text-base font-bold",
-                fyDeposited > 0
-                  ? "text-foreground"
-                  : "text-muted-foreground/60",
-              )}
-            >
-              {formatINR(fyDeposited)}
-            </p>
-            <p className="text-xs text-muted-foreground">FY Deposit</p>
-          </div>
-          <div className="text-right">
-            <p
-              className={cn(
-                "text-base font-bold",
-                fyWithdrawn > 0
-                  ? "text-foreground"
-                  : "text-muted-foreground/60",
-              )}
-            >
-              {formatINR(fyWithdrawn)}
-            </p>
-            <p className="text-xs text-muted-foreground">FY Withdrawn</p>
-          </div>
+        <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-border">
+          <KpiTile
+            icon={LogIn}
+            label="Previous Bal"
+            value={previousBal !== 0 ? formatINR(previousBal) : "—"}
+            valueClassName="text-muted-foreground/60"
+          />
+          <KpiTile
+            icon={CircleDollarSign}
+            label="Outstanding"
+            value={formatINR(receivable)}
+            valueClassName={
+              receivable > 0 ? "text-foreground" : "text-muted-foreground/60"
+            }
+          />
+          <KpiTile
+            icon={HandCoins}
+            label="Borrowed"
+            value={formatINR(borrowed)}
+            valueClassName={
+              borrowed > 0 ? "text-foreground" : "text-muted-foreground/60"
+            }
+          />
+          <KpiTile
+            icon={Check}
+            label="Repaid"
+            value={formatINR(repaid)}
+            valueClassName={
+              repaid > 0 ? "text-foreground" : "text-muted-foreground/60"
+            }
+          />
+          <KpiTile
+            icon={ArrowDownToLine}
+            label="FY Deposit"
+            value={formatINR(fyDeposited)}
+            valueClassName={
+              fyDeposited > 0 ? "text-foreground" : "text-muted-foreground/60"
+            }
+          />
+          <KpiTile
+            icon={ArrowUpFromLine}
+            label="FY Withdrawn"
+            value={formatINR(fyWithdrawn)}
+            valueClassName={
+              fyWithdrawn > 0 ? "text-foreground" : "text-muted-foreground/60"
+            }
+          />
         </div>
 
-        {/* Full-width FY Progress */}
-        <div className="mt-3">
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        {/* Full-width FY Progress, styled like the KPI tiles */}
+        <div className="mt-2 rounded-xl bg-muted/60 p-2.5">
+          <div className="h-1.5 bg-background rounded-full overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-500",
@@ -311,9 +322,11 @@ const MemberCard = memo(function MemberCard({
               style={{ width: `${progressPct}%` }}
             />
           </div>
-          <div className="flex items-center justify-between mt-1">
-            <p className="text-xs text-muted-foreground">FY Progress</p>
-            <p className="text-xs text-muted-foreground">
+          <div className="flex items-center justify-between mt-1.5">
+            <p className="text-[10px] font-medium text-muted-foreground">
+              FY Progress
+            </p>
+            <p className="text-[10px] font-medium text-muted-foreground">
               {formatINR(fyNetBalance)} / {formatINR(fyTarget)}
             </p>
           </div>
@@ -344,9 +357,11 @@ export function DashboardPage() {
     },
   });
 
-  // Bounded transaction queries: lifetime balances need a member-agnostic view,
-  // and FY-specific cards need just the current FY.
-  const { data: transactions = [] } = useQuery({
+  // One unbounded read of every active transaction serves both the lifetime
+  // per-member KPIs and the current-FY cards (the FY rows are a subset), so
+  // there is no separate by-FY query to keep in sync. Shared with the
+  // Members page through the ['transactions','all-active'] cache key.
+  const { data: transactions = [], isLoading: transactionsLoading } = useQuery({
     queryKey: ["transactions", "all-active"],
     queryFn: async () => {
       const snap = await getDocs(getAllActiveTransactions());
@@ -356,73 +371,45 @@ export function DashboardPage() {
     },
   });
 
-  const { data: fyTransactions = [] } = useQuery({
-    queryKey: ["transactions", "fy", currentFY],
-    queryFn: async () => {
-      const snap = await getDocs(getTransactionsByFY(currentFY));
-      return snap.docs.map(
-        (d) => ({ id: d.id, ...d.data() }) as TransactionDoc,
-      );
-    },
-  });
+  // Hooks must run on every render and in the same order, so these useMemos
+  // live BEFORE the loading early-return below. They produce empty results
+  // when their source data is still loading, which is fine.
+  //
+  // Per-member lifetime and current-FY figures in a single pass, from the
+  // shared helper the Members page, MemberDetail and the add-transaction
+  // dialog also use.
+  const memberTotals = useMemo(
+    () =>
+      buildMemberTotalsMap(
+        transactions,
+        members.map((m) => m.id),
+        config?.openingBalances,
+        currentFY,
+      ),
+    [transactions, members, config?.openingBalances, currentFY],
+  );
 
-  // All-time totals come from the stats doc so we never sum client-side.
-  const { data: stats } = useQuery({
-    queryKey: ["stats"],
-    queryFn: async () => {
-      const snap = await getDoc(statsRef);
-      return snap.data() as StatsCurrent | undefined;
-    },
-  });
+  const poolFYStats = useMemo(
+    () => computePoolFYStats(transactions, currentFY),
+    [transactions, currentFY],
+  );
 
-  // Hooks must run on every render and in the same order, so the
-  // memberStats / memberNetByMember useMemos live BEFORE the loading
-  // early-return below. They produce empty maps when their source data
-  // is still loading, which is fine.
-  const memberStats = useMemo(() => {
-    const map = new Map<
-      string,
-      { dep: number; wd: number; rep: number; bor: number; pay: number; int: number }
-    >();
-    for (const t of fyTransactions) {
-      if (!t.memberId) continue;
-      const s = map.get(t.memberId) ?? { dep: 0, wd: 0, rep: 0, bor: 0, pay: 0, int: 0 };
-      const type = (t as any).type === "return" ? "repayment" : t.type;
-      if (type === "deposit") s.dep += t.amount;
-      else if (type === "withdrawal") s.wd += t.amount;
-      else if (type === "repayment") s.rep += t.amount;
-      else if (type === "borrow") s.bor += t.amount;
-      else if (type === "payout") s.pay += t.amount;
-      else if (type === "interest") s.int += t.amount;
-      map.set(t.memberId, s);
-    }
-    return map;
-  }, [fyTransactions]);
+  // Pool-level lifetime figures come from the same ledger as the member
+  // cards, not from stats/current — see computePoolTotals().
+  const poolTotals = useMemo(
+    () =>
+      computePoolTotals(
+        transactions,
+        getTotalOpeningBalance(config?.openingBalances),
+        config?.openingInterest ?? 0,
+      ),
+    [transactions, config?.openingBalances, config?.openingInterest],
+  );
 
-  const memberNetByMember = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const t of transactions) {
-      if (!t.memberId) continue;
-      const prev = map.get(t.memberId) ?? 0;
-      const type = (t as any).type === "return" ? "repayment" : t.type;
-      if (type === "deposit" || type === "repayment") {
-        map.set(t.memberId, prev + t.amount);
-      } else if (type === "withdrawal" || type === "borrow" || type === "payout") {
-        map.set(t.memberId, prev - t.amount);
-      }
-    }
-    if (config?.openingBalances) {
-      for (const [memberId, amount] of Object.entries(config.openingBalances)) {
-        map.set(memberId, (map.get(memberId) ?? 0) + amount);
-      }
-    }
-    for (const m of members) {
-      if (!map.has(m.id)) map.set(m.id, 0);
-    }
-    return map;
-  }, [transactions, members, config?.openingBalances]);
-
-  if (configLoading || membersLoading) {
+  // Every figure on this page (banner, FY card, member rows, receivables) is
+  // now derived from the transaction list, so painting before it resolves
+  // would show opening-balance-only numbers that then jump.
+  if (configLoading || membersLoading || transactionsLoading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -433,39 +420,56 @@ export function DashboardPage() {
   }
 
   const openingBalances = config?.openingBalances;
-  const openingInterest = config?.openingInterest ?? 0;
 
-  // All-time totals are sourced from the stats doc; the transactions
-  // list is only used for the per-member cards (where we still need each
-  // member's lifetime net movement).
-  const availableBalance = stats?.poolBalance ?? 0;
-  const totalInterest = stats?.totalInterest ?? 0;
-  const totalReceivables = members.reduce((sum, member) => {
-    const net = memberNetByMember.get(member.id) ?? 0;
-    return sum + Math.max(0, -net);
-  }, 0);
-  const totalDepositsAllTime = stats?.totalDeposit ?? 0;
-  const fyDeposited = fyTransactions
-    .filter((t) => t.type === "deposit")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyWithdrawn = fyTransactions
-    .filter((t) => t.type === "withdrawal")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyInterest = fyTransactions
-    .filter((t) => t.type === "interest")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyRepaid = fyTransactions
-    .filter((t) => t.type === "repayment" || (t as any).type === "return")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyBorrowed = fyTransactions
-    .filter((t) => t.type === "borrow")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const fyPayout = fyTransactions
-    .filter((t) => t.type === "payout")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalInterestsEarned = totalInterest + openingInterest;
+  const availableBalance = poolTotals.balance;
 
-  const totalPoolFunds = totalDepositsAllTime + totalInterestsEarned;
+  // Column totals for the table footer, in one pass over the same map the
+  // rows read, so the footer can never disagree with the column above it.
+  // Every member id was seeded into the map, so `.get()` is always defined.
+  const columnTotals = members.reduce(
+    (acc, member) => {
+      const memberOb = getOpeningBalance(openingBalances, member.id);
+      const s = memberTotals.get(member.id) ?? emptyMemberTotals(memberOb);
+      acc.previousBal += memberOb;
+      acc.net += s.net;
+      acc.fyDeposited += s.fyDeposited;
+      acc.fyWithdrawn += s.fyWithdrawn;
+      acc.fyNetBalance += s.fyNetBalance;
+      acc.borrowed += s.borrowed;
+      acc.outstanding += s.outstanding;
+      return acc;
+    },
+    {
+      previousBal: 0,
+      net: 0,
+      fyDeposited: 0,
+      fyWithdrawn: 0,
+      fyNetBalance: 0,
+      borrowed: 0,
+      outstanding: 0,
+    },
+  );
+  const totalReceivables = columnTotals.outstanding;
+
+  // Pool-wide savings progress: everyone's FY net against everyone's target.
+  const totalFYTarget = fyTarget * members.length;
+  const totalProgressPct =
+    totalFYTarget > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round((columnTotals.fyNetBalance / totalFYTarget) * 100),
+          ),
+        )
+      : 0;
+  const totalDepositsAllTime = poolTotals.deposited;
+  const totalInterestsEarned = poolTotals.interest;
+
+  // Everything the pool owns: cash on hand plus what members still owe it.
+  // Using lifetime deposits as the denominator would exceed 100% whenever
+  // repayments outrun the borrows on record (legacy 'return' rows do).
+  const totalPoolFunds = availableBalance + totalReceivables;
   const availablePercentage =
     totalPoolFunds > 0
       ? Math.round((availableBalance / totalPoolFunds) * 100)
@@ -481,7 +485,7 @@ export function DashboardPage() {
       title: "Total Deposited",
       value: formatINR(totalDepositsAllTime),
       icon: Landmark,
-      subtitle: "All inflows into the pool",
+      subtitle: "Previous balances + all deposits",
       iconBg: "bg-emerald-500",
     },
     {
@@ -543,12 +547,12 @@ export function DashboardPage() {
             >
               <FYStatsCard
                 fy={currentFY}
-                deposited={fyDeposited}
-                withdrawn={fyWithdrawn}
-                repaid={fyRepaid}
-                borrowed={fyBorrowed}
-                payout={fyPayout}
-                interests={fyInterest}
+                deposited={poolFYStats.deposited}
+                withdrawn={poolFYStats.withdrawn}
+                repaid={poolFYStats.repaid}
+                borrowed={poolFYStats.borrowed}
+                payout={poolFYStats.payout}
+                interests={poolFYStats.interest}
               />
             </m.div>
             {summaryCards.map((stat, index) => (
@@ -581,30 +585,21 @@ export function DashboardPage() {
           <StaggerContainer className="lg:hidden space-y-3">
             {members.map((member) => {
               const memberOb = getOpeningBalance(openingBalances, member.id);
-              const net = memberNetByMember.get(member.id) ?? 0;
-              const receivable = Math.max(0, -net);
-              const stats = memberStats.get(member.id) ?? {
-                dep: 0,
-                wd: 0,
-                rep: 0,
-                bor: 0,
-                pay: 0,
-                int: 0,
-              };
-              const memberFyNetWithdrawn = Math.max(
-                0,
-                stats.wd - stats.rep,
-              );
+              const s =
+                memberTotals.get(member.id) ?? emptyMemberTotals(memberOb);
 
               return (
                 <StaggerItem key={member.id}>
                   <MemberCard
                     member={member}
-                    net={net}
-                    receivable={receivable}
+                    net={s.net}
+                    receivable={s.outstanding}
+                    borrowed={s.borrowed}
+                    repaid={s.repaid}
                     previousBal={memberOb}
-                    fyDeposited={stats.dep}
-                    fyWithdrawn={stats.wd}
+                    fyDeposited={s.fyDeposited}
+                    fyWithdrawn={s.fyWithdrawn}
+                    fyNetBalance={s.fyNetBalance}
                     fyTarget={fyTarget}
                   />
                 </StaggerItem>
@@ -625,6 +620,7 @@ export function DashboardPage() {
                     <TableHead className="text-right">Balance</TableHead>
                     <TableHead className="text-right">FY Deposited</TableHead>
                     <TableHead className="text-right">FY Withdrawn</TableHead>
+                    <TableHead className="text-right">Borrowed</TableHead>
                     <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">Progress</TableHead>
                   </TableRow>
@@ -635,21 +631,12 @@ export function DashboardPage() {
                       openingBalances,
                       member.id,
                     );
-                    const net = memberNetByMember.get(member.id) ?? 0;
-                    const receivable = Math.max(0, -net);
-                    const stats = memberStats.get(member.id) ?? {
-                      dep: 0,
-                      wd: 0,
-                      rep: 0,
-                      bor: 0,
-                      pay: 0,
-                      int: 0,
-                    };
-                    const memberFyNetWithdrawn = Math.max(
-                      0,
-                      stats.wd - stats.rep,
-                    );
-                    const memberFyNetBalance = stats.dep - memberFyNetWithdrawn;
+                    const s =
+                      memberTotals.get(member.id) ?? emptyMemberTotals(memberOb);
+                    const net = s.net;
+                    const receivable = s.outstanding;
+                    const borrowedTotal = s.borrowed;
+                    const memberFyNetBalance = s.fyNetBalance;
                     const progressPct =
                       fyTarget > 0
                         ? Math.max(
@@ -684,22 +671,32 @@ export function DashboardPage() {
                         <TableCell
                           className={cn(
                             "text-right",
-                            stats.dep > 0
+                            s.fyDeposited > 0
                               ? "text-foreground"
                               : "text-muted-foreground/60",
                           )}
                         >
-                          {formatINR(stats.dep)}
+                          {formatINR(s.fyDeposited)}
                         </TableCell>
                         <TableCell
                           className={cn(
                             "text-right",
-                            memberFyNetWithdrawn > 0
+                            s.fyWithdrawn > 0
                               ? "text-foreground"
                               : "text-muted-foreground/60",
                           )}
                         >
-                          {formatINR(memberFyWithdrawnRaw)}
+                          {formatINR(s.fyWithdrawn)}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right",
+                            borrowedTotal > 0
+                              ? "text-foreground"
+                              : "text-muted-foreground/60",
+                          )}
+                        >
+                          {formatINR(borrowedTotal)}
                         </TableCell>
                         <TableCell
                           className={cn(
@@ -735,6 +732,64 @@ export function DashboardPage() {
                     );
                   })}
                 </TableBody>
+                <TableFooter>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell className="font-semibold">
+                      Total
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {members.length}{" "}
+                        {members.length === 1 ? "member" : "members"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground/60">
+                      {columnTotals.previousBal !== 0
+                        ? formatINR(columnTotals.previousBal)
+                        : "—"}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right font-bold",
+                        columnTotals.net >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-rose-600 dark:text-rose-400",
+                      )}
+                    >
+                      {formatINR(columnTotals.net)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatINR(columnTotals.fyDeposited)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatINR(columnTotals.fyWithdrawn)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatINR(columnTotals.borrowed)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatINR(columnTotals.outstanding)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center gap-2 justify-end">
+                        <div className="w-16 h-1.5 bg-background rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              totalProgressPct >= 100
+                                ? "bg-emerald-500"
+                                : totalProgressPct >= 50
+                                  ? "bg-blue-500"
+                                  : "bg-amber-500",
+                            )}
+                            style={{ width: `${totalProgressPct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-8">
+                          {totalProgressPct}%
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
               </Table>
             </CardContent>
           </Card>

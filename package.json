@@ -11,7 +11,8 @@
     "test": "vitest",
     "seed": "npx tsx scripts/seed.ts",
     "import:excel": "npx tsx scripts/importExcel.ts",
-    "cleanup:transactions": "npx tsx scripts/cleanup-transactions.ts"
+    "cleanup:transactions": "npx tsx scripts/cleanup-transactions.ts",
+    "reconcile:stats": "npx tsx scripts/reconcile-stats.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

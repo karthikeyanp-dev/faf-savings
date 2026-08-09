@@ -11,6 +11,23 @@ import {
 import { db } from "./firebase";
 import type { TransactionType } from "@/types";
 
+/**
+ * `stats/current.poolBalance` is the only pool figure the write path and
+ * `firestore.rules` can check — neither can scan the transaction collection.
+ * The UI, by contrast, derives its caps from the ledger *plus* the
+ * `config/app` carry-forward (see computePoolTotals). The two therefore only
+ * agree while stats mirrors that same formula, which is exactly what
+ * `npx tsx scripts/reconcile-stats.ts --apply` establishes and the
+ * incremental updates below maintain.
+ *
+ * Consequences of skipping the reconcile: a stats doc that is short by the
+ * carry-forward rejects borrows the ledger says are affordable; an inflated
+ * one permits borrows it says are not. Run the reconcile after any
+ * out-of-app edit to transactions, and after changing opening balances.
+ * For the same reason, callers must not surface `newBalance` to the user as
+ * "the" pool balance — it is a stats-derived figure that can disagree with
+ * the Dashboard banner.
+ */
 interface CreateTransactionParams {
   type: TransactionType;
   memberId?: string;
@@ -120,7 +137,9 @@ interface UpdateTransactionParams {
   memberId?: string;
   amount?: number;
   date?: Date;
-  savingsMonth?: string;
+  // null explicitly clears the field (used when a non-deposit tx carries
+  // a stale savings month from legacy data).
+  savingsMonth?: string | null;
   notes?: string;
 }
 

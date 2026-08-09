@@ -18,9 +18,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatINR, getCurrentFY, formatSavingsMonth, normalizeTransactionType } from '@/utils/financialYear';
+import { formatINR, getCurrentFY, normalizeTransactionType, formatSavingsMonth } from '@/utils/financialYear';
 import type { TransactionDoc, MemberDoc } from '@/types';
-import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp } from 'lucide-react';
+import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp, Pencil, Undo2 } from 'lucide-react';
 import { m } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/utils';
@@ -85,6 +85,10 @@ const txTypeConfig = {
   },
 };
 
+// Money leaving the pool. Shared by the mobile card and the desktop grid so
+// the same transaction never gets opposite cues in the two layouts.
+const OUTFLOW_TYPES = new Set(['withdrawal', 'borrow', 'payout']);
+
 // Mobile Transaction Card. Memoized so a search keystroke or a
 // Load-more click does not re-render every previously visible row.
 const TransactionCard = memo(function TransactionCard({
@@ -100,9 +104,16 @@ const TransactionCard = memo(function TransactionCard({
   onVoid: () => void;
   isMaintainer: boolean;
 }) {
-  const config = txTypeConfig[tx.type] || txTypeConfig.deposit;
+  // The list queryFn already normalizes legacy 'return', but normalize again
+  // so a card rendered from any other source can't be signed the wrong way.
+  const txType = normalizeTransactionType(tx.type);
+  const config = txTypeConfig[txType] || txTypeConfig.deposit;
   const Icon = config.icon;
   const isActive = tx.status === 'active';
+  // Must match MemberDetail's history rows, which render the same
+  // transaction — treating only withdrawals as outflows made a borrow read
+  // as green `+` here and orange `-` there.
+  const isOutflow = OUTFLOW_TYPES.has(txType);
 
   return (
     <Card className={cn(!isActive && 'opacity-60')}>
@@ -120,38 +131,55 @@ const TransactionCard = memo(function TransactionCard({
           <div className="text-right">
             <p className={cn(
               'font-bold text-lg',
-              tx.type === 'withdrawal' ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
+              isOutflow ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
             )}>
-              {tx.type === 'withdrawal' ? '-' : '+'}{formatINR(tx.amount)}
+              {isOutflow ? '-' : '+'}{formatINR(tx.amount)}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-sm text-muted-foreground">
+        <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5" />
             <span>{format(tx.date.toDate(), 'MMM d, yyyy')}</span>
           </div>
-          {tx.savingsMonth && (
+          {/* Savings month only means something for deposits; legacy
+              borrow/repayment docs may carry stale values. */}
+          {tx.type === 'deposit' && tx.savingsMonth && (
             <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
               {formatSavingsMonth(tx.savingsMonth, 'short')}
             </span>
+          )}
+
+          {/* Edit / Revert are rare, maintainer-only actions: keep them as
+              quiet icon buttons tucked into the meta row rather than a
+              full-width pair competing with the amount for attention. */}
+          {/* Negative vertical margin lets the 28px tap targets overhang the
+              20px text line instead of setting the row height. */}
+          {isMaintainer && isActive && (
+            <div className="ml-auto -my-1 flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label="Edit transaction"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={onVoid}
+                aria-label="Revert transaction"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/20"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
 
         {tx.notes && (
           <p className="text-sm text-muted-foreground mt-2">{tx.notes}</p>
-        )}
-
-        {isMaintainer && isActive && (
-          <div className="flex gap-2 mt-3">
-            <Button variant="outline" size="sm" className="flex-1" onClick={onEdit}>
-              Edit
-            </Button>
-            <Button variant="destructive" size="sm" className="flex-1" onClick={onVoid}>
-              Revert
-            </Button>
-          </div>
         )}
       </CardContent>
     </Card>
@@ -549,13 +577,13 @@ export function ActivityPage() {
                 className="sticky top-0 z-10 grid items-center gap-3 bg-card border-b border-border px-4 py-3 text-xs font-medium text-muted-foreground"
                 style={{
                   gridTemplateColumns:
-                    '100px minmax(120px, 1fr) 120px 120px 110px minmax(120px, 1.4fr) 100px 140px',
+                    '100px minmax(120px, 1fr) 120px minmax(130px, 0.5fr) minmax(130px, 0.5fr) minmax(120px, 1.4fr) 100px 80px',
                 }}
               >
                 <div>Date</div>
                 <div>Member</div>
                 <div>Type</div>
-                <div className="text-right">Amount</div>
+                <div className="text-right pr-4">Amount</div>
                 <div>Month</div>
                 <div>Notes</div>
                 <div>Status</div>
@@ -578,7 +606,7 @@ export function ActivityPage() {
                       className="grid items-center gap-3 px-4 border-b border-border/50 text-sm absolute left-0 right-0"
                       style={{
                         gridTemplateColumns:
-                          '100px minmax(120px, 1fr) 120px 120px 110px minmax(120px, 1.4fr) 100px 140px',
+                          '100px minmax(120px, 1fr) 120px minmax(130px, 0.5fr) minmax(130px, 0.5fr) minmax(120px, 1.4fr) 100px 80px',
                         height: `${virtualRow.size}px`,
                         transform: `translateY(${virtualRow.start}px)`,
                       }}
@@ -592,11 +620,21 @@ export function ActivityPage() {
                           {(txTypeConfig[tx.type] || txTypeConfig.repayment).label}
                         </span>
                       </div>
-                      <div className="text-right font-semibold">
+                      <div
+                        className={cn(
+                          'text-right font-semibold pr-4',
+                          OUTFLOW_TYPES.has(tx.type)
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-green-600 dark:text-green-400',
+                        )}
+                      >
+                        {OUTFLOW_TYPES.has(tx.type) ? '-' : '+'}
                         {formatINR(tx.amount)}
                       </div>
                       <div className="text-muted-foreground truncate">
-                        {tx.savingsMonth ? formatSavingsMonth(tx.savingsMonth, 'short') : '-'}
+                        {tx.type === 'deposit' && tx.savingsMonth
+                          ? formatSavingsMonth(tx.savingsMonth, 'short')
+                          : '-'}
                       </div>
                       <div className="text-muted-foreground truncate">
                         {tx.notes || '-'}
@@ -607,23 +645,27 @@ export function ActivityPage() {
                         </Badge>
                       </div>
                       {isMaintainer && (
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1">
                           {tx.status === 'active' ? (
                             <>
-                              <Button
-                                variant="outline"
-                                size="sm"
+                              <button
+                                type="button"
                                 onClick={() => setEditingTx(tx)}
+                                title="Edit"
+                                aria-label="Edit transaction"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                               >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => setVoidingTx(tx)}
+                                title="Revert"
+                                aria-label="Revert transaction"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/20"
                               >
-                                Revert
-                              </Button>
+                                <Undo2 className="h-3.5 w-3.5" />
+                              </button>
                             </>
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
