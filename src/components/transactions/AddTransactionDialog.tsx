@@ -84,20 +84,28 @@ function TransactionFormContent({
       <div>
         <Label className="text-sm font-medium">Transaction Type</Label>
         <div className="grid grid-cols-3 gap-2 mt-1.5">
-          {(["deposit", "repayment", "withdrawal", "borrow", "payout", "interest"] as const).map((type) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => setValue("type", type, { shouldValidate: true, shouldDirty: true })}
-              className={`px-3 py-2.5 rounded-xl text-sm font-medium capitalize transition-colors ${
-                txType === type
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              {type}
-            </button>
-          ))}
+          {(["deposit", "repayment", "interest", "borrow", "withdrawal", "payout"] as const).map((type) => {
+            // First row is money coming in (green), second row money going out (orange).
+            const isPaymentIn = ["deposit", "repayment", "interest"].includes(type);
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setValue("type", type, { shouldValidate: true, shouldDirty: true })}
+                className={`px-3 py-2.5 rounded-xl text-sm font-medium capitalize transition-colors ${
+                  txType === type
+                    ? "bg-primary text-primary-foreground"
+                    : `bg-muted hover:bg-muted/80 ${
+                        isPaymentIn
+                          ? "text-green-700 dark:text-green-600"
+                          : "text-orange-700 dark:text-orange-600"
+                      }`
+                }`}
+              >
+                {type}
+              </button>
+            );
+          })}
         </div>
         {errors.type && (
           <p className="text-sm text-destructive mt-1">{errors.type.message}</p>
