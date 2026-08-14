@@ -30,7 +30,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectItem } from "@/components/ui/select";
 import {
   formatINR,
   getCurrentFY,
@@ -324,31 +323,6 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["members"] });
     } catch (error: any) {
       toast.error(error.message || "Failed to update member");
-    }
-  };
-
-  const handleMaintainerHandover = async (newMaintainerUid: string) => {
-    try {
-      await updateDoc(doc(db, "config", "app"), {
-        currentMaintainerUid: newMaintainerUid,
-        updatedAt: serverTimestamp(),
-        updatedByUid: user!.uid,
-      });
-
-      await updateDoc(doc(db, "users", user!.uid), {
-        role: "viewer",
-        updatedAt: serverTimestamp(),
-      });
-      await updateDoc(doc(db, "users", newMaintainerUid), {
-        role: "maintainer",
-        updatedAt: serverTimestamp(),
-      });
-
-      toast.success("Maintainer handover complete");
-      queryClient.invalidateQueries({ queryKey: ["config"] });
-      queryClient.invalidateQueries({ queryKey: ["users"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to handover");
     }
   };
 
@@ -747,39 +721,6 @@ export function SettingsPage() {
                     Set Previous Balances
                   </Button>
                 </div>
-              </SettingsSection>
-            </StaggerItem>
-          )}
-
-          {/* Maintainer Handover */}
-          {isMaintainer && (
-            <StaggerItem>
-              <SettingsSection
-                title="Maintainer Handover"
-                description="Transfer maintainer role to another user"
-                icon={Crown}
-              >
-                <Select
-                  value=""
-                  onValueChange={(uid) => {
-                    if (
-                      window.confirm(
-                        "Are you sure you want to transfer maintainer role?",
-                      )
-                    ) {
-                      handleMaintainerHandover(uid);
-                    }
-                  }}
-                >
-                  <SelectItem value="">Select new maintainer...</SelectItem>
-                  {users
-                    .filter((u) => u.uid !== user?.uid && u.active)
-                    .map((u) => (
-                      <SelectItem key={u.uid} value={u.uid}>
-                        {u.displayName} ({u.email})
-                      </SelectItem>
-                    ))}
-                </Select>
               </SettingsSection>
             </StaggerItem>
           )}
