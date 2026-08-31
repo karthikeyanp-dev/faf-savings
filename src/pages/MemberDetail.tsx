@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useCallback, Suspense, lazy } from "react";
+import { memo, useMemo, useState, useCallback, useEffect, Suspense, lazy } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { doc, getDoc, getDocs, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -275,6 +275,13 @@ export function MemberDetailPage() {
   const { isMaintainer } = useAuth();
   const currentFY = getCurrentFY();
   const fyTarget = calculateFYTarget(currentFY);
+
+  // Reset scroll position when navigating to (or between) member detail
+  // pages, so a tap on a card at the bottom of the home page does not
+  // leave the detail view scrolled to the footer.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
+  }, [id]);
 
   const [editingTx, setEditingTx] = useState<TransactionDoc | null>(null);
   const [voidingTx, setVoidingTx] = useState<TransactionDoc | null>(null);

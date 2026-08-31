@@ -1,8 +1,8 @@
-import { memo, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { memo, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getAllActiveTransactions } from "@/lib/firestore";
+import { getAllActiveTransactions, getTransactionsByMember } from "@/lib/firestore";
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import {
   computePoolFYStats,
   computePoolTotals,
   getTotalOpeningBalance,
+  normalizeTransactionType,
 } from "@/utils/financialYear";
 import type { AppConfig, MemberDoc, TransactionDoc } from "@/types";
 import {
@@ -42,6 +43,7 @@ import {
   CircleDollarSign,
   HandCoins,
   Check,
+  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { m } from "framer-motion";
@@ -194,7 +196,7 @@ const FYStatsCard = memo(function FYStatsCard({
   );
 });
 
-// Mobile Member Card (non-interactive, display only)
+// Mobile Member Card — tappable to navigate to member detail.
 // Memoized so updates to one member (e.g. deposit) do not re-render
 // every other member card. With 50+ members this is the most visible
 // win on the dashboard.
@@ -209,6 +211,8 @@ const MemberCard = memo(function MemberCard({
   fyWithdrawn,
   fyNetBalance,
   fyTarget,
+  onClick,
+  onPrefetch,
 }: {
   member: MemberDoc;
   net: number;
@@ -220,6 +224,8 @@ const MemberCard = memo(function MemberCard({
   fyWithdrawn: number;
   fyNetBalance: number;
   fyTarget: number;
+  onClick: () => void;
+  onPrefetch: () => void;
 }) {
   // fyNetBalance comes from the shared helper (deposits − withdrawals −
   // payouts) rather than being recomputed here, so a payout can't leave the
@@ -230,114 +236,128 @@ const MemberCard = memo(function MemberCard({
       : 0;
 
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0",
-                member.active
-                  ? "bg-primary/10 text-primary"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              {member.name.charAt(0).toUpperCase()}
+    <m.div
+      whileTap={{ scale: 0.98 }}
+      whileHover={{ scale: 1.01 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      className="w-full cursor-pointer"
+      onClick={onClick}
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
+    >
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={cn(
+                  "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0",
+                  member.active
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {member.name.charAt(0).toUpperCase()}
+              </div>
+              <p className="font-semibold truncate">{member.name}</p>
             </div>
-            <p className="font-semibold truncate">{member.name}</p>
+            <div className="flex items-center gap-1 shrink-0">
+              <p
+                className={cn(
+                  "text-lg font-bold",
+                  net >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400",
+                )}
+              >
+                {formatINR(net)}
+              </p>
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </div>
           </div>
-          <p
-            className={cn(
-              "text-lg font-bold shrink-0",
-              net >= 0
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-rose-600 dark:text-rose-400",
-            )}
-          >
-            {formatINR(net)}
-          </p>
-        </div>
 
-        <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-border">
-          <KpiTile
-            icon={LogIn}
-            label="Previous Bal"
-            value={previousBal !== 0 ? formatINR(previousBal) : "—"}
-            valueClassName="text-muted-foreground/60"
-          />
-          <KpiTile
-            icon={CircleDollarSign}
-            label="Outstanding"
-            value={formatINR(receivable)}
-            valueClassName={
-              receivable > 0 ? "text-foreground" : "text-muted-foreground/60"
-            }
-          />
-          <KpiTile
-            icon={HandCoins}
-            label="Borrowed"
-            value={formatINR(borrowed)}
-            valueClassName={
-              borrowed > 0 ? "text-foreground" : "text-muted-foreground/60"
-            }
-          />
-          <KpiTile
-            icon={Check}
-            label="Repaid"
-            value={formatINR(repaid)}
-            valueClassName={
-              repaid > 0 ? "text-foreground" : "text-muted-foreground/60"
-            }
-          />
-          <KpiTile
-            icon={ArrowDownToLine}
-            label="FY Deposit"
-            value={formatINR(fyDeposited)}
-            valueClassName={
-              fyDeposited > 0 ? "text-foreground" : "text-muted-foreground/60"
-            }
-          />
-          <KpiTile
-            icon={ArrowUpFromLine}
-            label="FY Withdrawn"
-            value={formatINR(fyWithdrawn)}
-            valueClassName={
-              fyWithdrawn > 0 ? "text-foreground" : "text-muted-foreground/60"
-            }
-          />
-        </div>
-
-        {/* Full-width FY Progress, styled like the KPI tiles */}
-        <div className="mt-2 rounded-xl bg-muted/60 p-2.5">
-          <div className="h-1.5 bg-background rounded-full overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all duration-500",
-                progressPct >= 100
-                  ? "bg-emerald-500"
-                  : progressPct >= 50
-                    ? "bg-blue-500"
-                    : "bg-amber-500",
-              )}
-              style={{ width: `${progressPct}%` }}
+          <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-border">
+            <KpiTile
+              icon={LogIn}
+              label="Previous Bal"
+              value={previousBal !== 0 ? formatINR(previousBal) : "—"}
+              valueClassName="text-muted-foreground/60"
+            />
+            <KpiTile
+              icon={CircleDollarSign}
+              label="Outstanding"
+              value={formatINR(receivable)}
+              valueClassName={
+                receivable > 0 ? "text-foreground" : "text-muted-foreground/60"
+              }
+            />
+            <KpiTile
+              icon={HandCoins}
+              label="Borrowed"
+              value={formatINR(borrowed)}
+              valueClassName={
+                borrowed > 0 ? "text-foreground" : "text-muted-foreground/60"
+              }
+            />
+            <KpiTile
+              icon={Check}
+              label="Repaid"
+              value={formatINR(repaid)}
+              valueClassName={
+                repaid > 0 ? "text-foreground" : "text-muted-foreground/60"
+              }
+            />
+            <KpiTile
+              icon={ArrowDownToLine}
+              label="FY Deposit"
+              value={formatINR(fyDeposited)}
+              valueClassName={
+                fyDeposited > 0 ? "text-foreground" : "text-muted-foreground/60"
+              }
+            />
+            <KpiTile
+              icon={ArrowUpFromLine}
+              label="FY Withdrawn"
+              value={formatINR(fyWithdrawn)}
+              valueClassName={
+                fyWithdrawn > 0 ? "text-foreground" : "text-muted-foreground/60"
+              }
             />
           </div>
-          <div className="flex items-center justify-between mt-1.5">
-            <p className="text-[10px] font-medium text-muted-foreground">
-              FY Progress
-            </p>
-            <p className="text-[10px] font-medium text-muted-foreground">
-              {formatINR(fyNetBalance)} / {formatINR(fyTarget)}
-            </p>
+
+          {/* Full-width FY Progress, styled like the KPI tiles */}
+          <div className="mt-2 rounded-xl bg-muted/60 p-2.5">
+            <div className="h-1.5 bg-background rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-500",
+                  progressPct >= 100
+                    ? "bg-emerald-500"
+                    : progressPct >= 50
+                      ? "bg-blue-500"
+                      : "bg-amber-500",
+                )}
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-1.5">
+              <p className="text-[10px] font-medium text-muted-foreground">
+                FY Progress
+              </p>
+              <p className="text-[10px] font-medium text-muted-foreground">
+                {formatINR(fyNetBalance)} / {formatINR(fyTarget)}
+              </p>
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </m.div>
   );
 });
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const currentFY = getCurrentFY();
   const fyTarget = calculateFYTarget(currentFY);
 
@@ -404,6 +424,38 @@ export function DashboardPage() {
         config?.openingInterest ?? 0,
       ),
     [transactions, config?.openingBalances, config?.openingInterest],
+  );
+
+  // Prefetch a member's transaction history on hover/focus so the detail
+  // page renders instantly on tap, matching the Members page behavior.
+  const prefetchMember = useCallback(
+    (memberId: string) => {
+      queryClient.prefetchQuery({
+        queryKey: ["transactions", "member", memberId],
+        queryFn: async () => {
+          const snap = await getDocs(getTransactionsByMember(memberId));
+          return snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              // Must match MemberDetail's queryFn: normalize legacy
+              // 'return' -> 'repayment' or the cached rows render with
+              // the deposit fallback label.
+              type: normalizeTransactionType(data.type as string),
+            } as TransactionDoc;
+          });
+        },
+      });
+    },
+    [queryClient],
+  );
+
+  // Stable handler factory so memoized cards don't re-render when a
+  // sibling's onClick identity changes.
+  const goToMember = useCallback(
+    (memberId: string) => navigate(`/members/${memberId}`),
+    [navigate],
   );
 
   // Every figure on this page (banner, FY card, member rows, receivables) is
@@ -601,6 +653,8 @@ export function DashboardPage() {
                     fyWithdrawn={s.fyWithdrawn}
                     fyNetBalance={s.fyNetBalance}
                     fyTarget={fyTarget}
+                    onClick={() => goToMember(member.id)}
+                    onPrefetch={() => prefetchMember(member.id)}
                   />
                 </StaggerItem>
               );
@@ -651,9 +705,16 @@ export function DashboardPage() {
                         : 0;
 
                     return (
-                      <TableRow key={member.id}>
+                      <TableRow
+                        key={member.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => goToMember(member.id)}
+                        onMouseEnter={() => prefetchMember(member.id)}
+                      >
                         <TableCell className="font-medium">
-                          {member.name}
+                          <span className="bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+                            {member.name}
+                          </span>
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground/60">
                           {memberOb !== 0 ? formatINR(memberOb) : "—"}
