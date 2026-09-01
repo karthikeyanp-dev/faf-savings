@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatINR, getCurrentFY, normalizeTransactionType, formatSavingsMonth } from '@/utils/financialYear';
 import type { TransactionDoc, MemberDoc } from '@/types';
-import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp, Pencil, Undo2 } from 'lucide-react';
+import { Search, Filter, X, ArrowUpRight, ArrowDownRight, RotateCcw, Wallet, Calendar, TrendingUp, Pencil, Undo2, Ban } from 'lucide-react';
 import { m } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/utils';
@@ -116,27 +116,70 @@ const TransactionCard = memo(function TransactionCard({
   const isOutflow = OUTFLOW_TYPES.has(txType);
 
   return (
-    <Card className={cn(!isActive && 'opacity-60')}>
+    <Card
+      className={cn(
+        'overflow-hidden',
+        !isActive &&
+          'border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/30',
+      )}
+    >
       <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn('p-2 rounded-xl', config.color)}>
-              <Icon className="h-4 w-4 text-white" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={cn(
+                'p-2 rounded-xl shrink-0',
+                isActive ? config.color : 'bg-slate-300 dark:bg-slate-700',
+              )}
+            >
+              {isActive ? (
+                <Icon className="h-4 w-4 text-white" />
+              ) : (
+                <Ban className="h-4 w-4 text-white" />
+              )}
             </div>
-            <div>
-              <p className="font-semibold">{config.label}</p>
-              <p className="text-sm text-muted-foreground">{memberName}</p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="font-semibold">{config.label}</p>
+                {!isActive && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-500/25 dark:text-rose-300 px-1.5 py-0.5 rounded">
+                    <Ban className="h-2.5 w-2.5" />
+                    Voided
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground truncate">
+                {memberName}
+              </p>
             </div>
           </div>
-          <div className="text-right">
-            <p className={cn(
-              'font-bold text-lg',
-              isOutflow ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
-            )}>
-              {isOutflow ? '-' : '+'}{formatINR(tx.amount)}
+          <div className="text-right shrink-0">
+            <p
+              className={cn(
+                'font-bold text-lg',
+                !isActive
+                  ? 'text-muted-foreground line-through decoration-rose-500 decoration-2'
+                  : isOutflow
+                    ? 'text-orange-600 dark:text-orange-400'
+                    : 'text-green-600 dark:text-green-400',
+              )}
+            >
+              {isOutflow ? '-' : '+'}
+              {formatINR(tx.amount)}
             </p>
           </div>
         </div>
+
+        {/* Void reason — only meaningful for voided transactions, and the
+            only place the user can read it without re-opening the void
+            dialog. Truncated so a long free-text reason doesn't blow up
+            the card height. */}
+        {!isActive && tx.voidReason && (
+          <p className="mt-2.5 text-xs text-rose-700 dark:text-rose-300/90 italic line-clamp-2">
+            <span className="font-semibold not-italic">Reason:</span>{' '}
+            {tx.voidReason}
+          </p>
+        )}
 
         <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
@@ -599,16 +642,28 @@ export function ActivityPage() {
               >
                 {tableVirtualizer.getVirtualItems().map((virtualRow) => {
                   const tx = filtered[virtualRow.index];
+                  const isActive = tx.status === 'active';
+                  const typeCfg = txTypeConfig[tx.type] || txTypeConfig.repayment;
                   return (
                     <div
                       key={tx.id}
                       data-index={virtualRow.index}
-                      className="grid items-center gap-3 px-4 border-b border-border/50 text-sm absolute left-0 right-0"
+                      className={cn(
+                        'grid items-center gap-3 px-4 border-b border-border/50 text-sm absolute left-0 right-0',
+                        !isActive &&
+                          'bg-rose-50/50 dark:bg-rose-950/20 text-rose-900 dark:text-rose-200/90',
+                      )}
                       style={{
                         gridTemplateColumns:
                           '100px minmax(120px, 1fr) 120px minmax(130px, 0.5fr) minmax(130px, 0.5fr) minmax(120px, 1.4fr) 100px 80px',
                         height: `${virtualRow.size}px`,
                         transform: `translateY(${virtualRow.start}px)`,
+                        // Left edge accent strip so a voided row reads as
+                        // distinct even when the eye is scanning the amount
+                        // column instead of the status column.
+                        boxShadow: !isActive
+                          ? 'inset 4px 0 0 0 rgb(244 63 94)'
+                          : undefined,
                       }}
                     >
                       <div className="text-muted-foreground">
@@ -616,16 +671,24 @@ export function ActivityPage() {
                       </div>
                       <div className="font-medium truncate">{tx.memberName}</div>
                       <div>
-                        <span className={`px-2.5 py-1 rounded-md text-xs font-medium text-white ${(txTypeConfig[tx.type] || txTypeConfig.repayment).color}`}>
-                          {(txTypeConfig[tx.type] || txTypeConfig.repayment).label}
+                        <span
+                          className={cn(
+                            'px-2.5 py-1 rounded-md text-xs font-medium text-white inline-flex items-center gap-1',
+                            isActive ? typeCfg.color : 'bg-slate-300 dark:bg-slate-700',
+                          )}
+                        >
+                          {!isActive && <Ban className="h-3 w-3" />}
+                          {typeCfg.label}
                         </span>
                       </div>
                       <div
                         className={cn(
                           'text-right font-semibold pr-4',
-                          OUTFLOW_TYPES.has(tx.type)
-                            ? 'text-orange-600 dark:text-orange-400'
-                            : 'text-green-600 dark:text-green-400',
+                          !isActive
+                            ? 'text-muted-foreground line-through decoration-rose-500 decoration-2'
+                            : OUTFLOW_TYPES.has(tx.type)
+                              ? 'text-orange-600 dark:text-orange-400'
+                              : 'text-green-600 dark:text-green-400',
                         )}
                       >
                         {OUTFLOW_TYPES.has(tx.type) ? '-' : '+'}
@@ -636,13 +699,29 @@ export function ActivityPage() {
                           ? formatSavingsMonth(tx.savingsMonth, 'short')
                           : '-'}
                       </div>
-                      <div className="text-muted-foreground truncate">
-                        {tx.notes || '-'}
+                      <div
+                        className="text-muted-foreground truncate"
+                        // Void reason takes priority over free-form notes
+                        // for voided rows so the maintainer's reason is
+                        // visible without opening the row.
+                        title={!isActive && tx.voidReason ? `Reason: ${tx.voidReason}` : undefined}
+                      >
+                        {!isActive && tx.voidReason
+                          ? tx.voidReason
+                          : tx.notes || '-'}
                       </div>
                       <div>
-                        <Badge variant={tx.status === 'active' ? 'default' : 'secondary'}>
-                          {tx.status}
-                        </Badge>
+                        {isActive ? (
+                          <Badge variant="default">active</Badge>
+                        ) : (
+                          <Badge
+                            variant="destructive"
+                            className="inline-flex items-center gap-1"
+                          >
+                            <Ban className="h-3 w-3" />
+                            Voided
+                          </Badge>
+                        )}
                       </div>
                       {isMaintainer && (
                         <div className="flex justify-end gap-1">
