@@ -134,6 +134,11 @@ function TransactionFormContent({
               {errors.memberId.message}
             </p>
           )}
+          {!balancesLoading && (txType === 'deposit' || txType === 'repayment') && selectedMemberId && amountLimits.totalOutstanding > 0 && (
+            <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1.5">
+              Outstanding: ₹{amountLimits.totalOutstanding.toLocaleString('en-IN')}
+            </p>
+          )}
         </div>
       )}
 
@@ -172,11 +177,6 @@ function TransactionFormContent({
         {!balancesLoading && txType === 'payout' && selectedMemberId && (
           <p className="text-xs text-muted-foreground mt-1">
             Full balance will be paid out
-          </p>
-        )}
-        {!balancesLoading && txType === 'repayment' && selectedMemberId && amountLimits.totalOutstanding > 0 && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Outstanding: ₹{amountLimits.totalOutstanding.toLocaleString('en-IN')}
           </p>
         )}
         {repaymentBlocked && (
