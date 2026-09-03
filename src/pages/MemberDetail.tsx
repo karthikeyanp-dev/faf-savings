@@ -38,6 +38,7 @@ import {
   Pencil,
   Undo2,
   Calendar,
+  Ban,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { m } from "framer-motion";
@@ -93,11 +94,25 @@ const TransactionRow = memo(function TransactionRow({
   const signedAmount = isOutflow ? -tx.amount : tx.amount;
 
   return (
-    <TableRow className={cn(!isActive && "opacity-60")}>
+    <TableRow
+      className={cn(
+        !isActive &&
+          "bg-rose-50/50 dark:bg-rose-950/20 text-rose-900 dark:text-rose-200/90 shadow-[inset_4px_0_0_0_rgb(244,63,94)]",
+      )}
+    >
       <TableCell className="py-3">
         <div className="flex items-center gap-3">
-          <div className={cn("p-1.5 rounded-lg shrink-0", config.color)}>
-            <Icon className="h-3.5 w-3.5 text-white" />
+          <div
+            className={cn(
+              "p-1.5 rounded-lg shrink-0",
+              isActive ? config.color : "bg-slate-300 dark:bg-slate-700",
+            )}
+          >
+            {isActive ? (
+              <Icon className="h-3.5 w-3.5 text-white" />
+            ) : (
+              <Ban className="h-3.5 w-3.5 text-white" />
+            )}
           </div>
           <div className="min-w-0">
             <p className="font-medium text-sm">{config.label}</p>
@@ -114,31 +129,48 @@ const TransactionRow = memo(function TransactionRow({
               {formatSavingsMonth(tx.savingsMonth, "short")}
             </span>
           )}
-          {tx.notes && (
+          {!isActive && tx.voidReason ? (
+            <p
+              className="text-xs text-rose-700 dark:text-rose-300/90 italic truncate max-w-[240px]"
+              title={`Reason: ${tx.voidReason}`}
+            >
+              <span className="font-semibold not-italic">Reason:</span>{" "}
+              {tx.voidReason}
+            </p>
+          ) : tx.notes ? (
             <p className="text-xs text-muted-foreground truncate max-w-[240px]">
               {tx.notes}
             </p>
-          )}
+          ) : null}
         </div>
       </TableCell>
       <TableCell
         className={cn(
           "text-right font-semibold whitespace-nowrap",
-          signedAmount < 0
-            ? "text-orange-600 dark:text-orange-400"
-            : "text-green-600 dark:text-green-400",
+          !isActive
+            ? "text-muted-foreground line-through decoration-rose-500 decoration-2"
+            : signedAmount < 0
+              ? "text-orange-600 dark:text-orange-400"
+              : "text-green-600 dark:text-green-400",
         )}
       >
         {signedAmount < 0 ? "-" : "+"}
         {formatINR(Math.abs(signedAmount))}
       </TableCell>
       <TableCell className="text-right">
-        <Badge
-          variant={isActive ? "default" : "secondary"}
-          className="text-[10px]"
-        >
-          {tx.status}
-        </Badge>
+        {isActive ? (
+          <Badge variant="default" className="text-[10px]">
+            active
+          </Badge>
+        ) : (
+          <Badge
+            variant="destructive"
+            className="text-[10px] inline-flex items-center gap-1"
+          >
+            <Ban className="h-3 w-3" />
+            Voided
+          </Badge>
+        )}
       </TableCell>
       {isMaintainer && (
         <TableCell className="text-right">
@@ -195,34 +227,64 @@ const TransactionCard = memo(function TransactionCard({
   const canModify = isMaintainer && isActive && tx.type !== "opening_balance";
 
   return (
-    <Card className={cn(!isActive && "opacity-60")}>
+    <Card
+      className={cn(
+        "overflow-hidden",
+        !isActive &&
+          "border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/30",
+      )}
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className={cn("p-2 rounded-xl shrink-0", config.color)}>
-              <Icon className="h-4 w-4 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold truncate">{config.label}</p>
-              {!isActive && (
-                <Badge variant="secondary" className="mt-0.5 text-[10px]">
-                  {tx.status}
-                </Badge>
+            <div
+              className={cn(
+                "p-2 rounded-xl shrink-0",
+                isActive ? config.color : "bg-slate-300 dark:bg-slate-700",
+              )}
+            >
+              {isActive ? (
+                <Icon className="h-4 w-4 text-white" />
+              ) : (
+                <Ban className="h-4 w-4 text-white" />
               )}
             </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="font-semibold">{config.label}</p>
+                {!isActive && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-500/25 dark:text-rose-300 px-1.5 py-0.5 rounded">
+                    <Ban className="h-2.5 w-2.5" />
+                    Voided
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <p
-            className={cn(
-              "font-bold text-lg whitespace-nowrap",
-              signedAmount < 0
-                ? "text-orange-600 dark:text-orange-400"
-                : "text-green-600 dark:text-green-400",
-            )}
-          >
-            {signedAmount < 0 ? "-" : "+"}
-            {formatINR(Math.abs(signedAmount))}
-          </p>
+          <div className="text-right shrink-0">
+            <p
+              className={cn(
+                "font-bold text-lg whitespace-nowrap",
+                !isActive
+                  ? "text-muted-foreground line-through decoration-rose-500 decoration-2"
+                  : signedAmount < 0
+                    ? "text-orange-600 dark:text-orange-400"
+                    : "text-green-600 dark:text-green-400",
+              )}
+            >
+              {signedAmount < 0 ? "-" : "+"}
+              {formatINR(Math.abs(signedAmount))}
+            </p>
+          </div>
         </div>
+
+        {/* Void reason — only meaningful for voided transactions */}
+        {!isActive && tx.voidReason && (
+          <p className="mt-2.5 text-xs text-rose-700 dark:text-rose-300/90 italic line-clamp-2">
+            <span className="font-semibold not-italic">Reason:</span>{" "}
+            {tx.voidReason}
+          </p>
+        )}
 
         <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
